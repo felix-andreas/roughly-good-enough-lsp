@@ -1,0 +1,19 @@
+{
+	"name": "roughly-good-enough-lsp",
+	"description": "A roughly good enough language server for R",
+	"author": "Felix Andreas",
+	"version": "0.0.1",
+	"publisher": "felix-andreas",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/felix-andreas/roughly-good-enough-lsp"
+	},
+	"engines": {
+		"node": "*"
+	},
+	"dependencies": {
+		"vscode-languageserver": "^9.0.1",
+		"vscode-languageserver-textdocument": "^1.0.11"
+	},
+	"scripts": {}
+}
