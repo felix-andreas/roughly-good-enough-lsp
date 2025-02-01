@@ -1,42 +1,55 @@
-import * as path from 'path';
-import { workspace, ExtensionContext } from 'vscode';
+import { window, workspace, ExtensionContext } from 'vscode';
 
 import {
   LanguageClient,
   LanguageClientOptions,
   ServerOptions,
-  TransportKind
+  TransportKind,
+  Executable
 } from 'vscode-languageclient/node';
 
 let client: LanguageClient;
 
-export function activate(context: ExtensionContext) {
-  // The server is implemented in node
-  const serverModule = context.asAbsolutePath(
-    path.join('server', 'out', 'server.js')
-  );
+export function activate(_context: ExtensionContext) {
+  // uncomment to us TS server
+  // const serverModule = context.asAbsolutePath(
+  //   path.join('server', 'out', 'server.js')
+  // );
+  // const serverOptions: ServerOptions = {
+  //   run: { module: serverModule, transport: TransportKind.ipc },
+  //   debug: {
+  //     module: serverModule,
+  //     transport: TransportKind.ipc,
+  //   }
+  // };
 
-  // If the extension is launched in debug mode then the debug server options are used
-  // Otherwise the run options are used
+  const traceOutputChannel = window.createOutputChannel("R(oughly good enough) LSP trace");
+  const command = process.env.SERVER_PATH || "roughly-good-enough-lsp";
+  console.log(command)
+  const run: Executable = {
+    command,
+    transport: TransportKind.stdio,
+    options: {
+      env: {
+        ...process.env,
+        RUST_LOG: "debug",
+      },
+    },
+  };
   const serverOptions: ServerOptions = {
-    run: { module: serverModule, transport: TransportKind.ipc },
-    debug: {
-      module: serverModule,
-      transport: TransportKind.ipc,
-    }
+    run,
+    debug: run,
   };
 
-  // Options to control the language client
   const clientOptions: LanguageClientOptions = {
-    // Register the server for R documents by default
     documentSelector: [{ scheme: "file", language: "r" }],
     synchronize: {
       // Notify the server about file changes to '.clientrc files contained in the workspace
       fileEvents: workspace.createFileSystemWatcher('**/.clientrc')
-    }
+    },
+    traceOutputChannel,
   };
 
-  // Create the language client and start the client.
   client = new LanguageClient(
     'roughly-good-enough-lsp',
     'R(oughly good enough) LSP',
@@ -44,8 +57,7 @@ export function activate(context: ExtensionContext) {
     clientOptions
   );
 
-  // Start the client. This will also launch the server
-  client.start();
+  client.start(); // this also launches the server
 }
 
 export function deactivate(): Thenable<void> | undefined {

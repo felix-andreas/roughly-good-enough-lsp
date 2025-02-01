@@ -3,3 +3,8 @@ node_modules
 client/server
 .vscode-test
 .direnv
+
+
+# Added by cargo
+
+/target

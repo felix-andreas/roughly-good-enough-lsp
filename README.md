@@ -26,3 +26,4 @@ For me this led to the issue that the language server wasn't spawned because I h
 
 * https://github.com/microsoft/vscode-extension-samples/tree/main/lsp-sample
 * https://github.com/semanticart/lsp-from-scratch
+* https://www.reddit.com/r/rust/comments/uu47mk/comment/i9dn0yg/
