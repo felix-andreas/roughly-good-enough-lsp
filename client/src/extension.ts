@@ -1,4 +1,4 @@
-import { window, workspace, ExtensionContext } from 'vscode';
+import { window, commands, workspace, ExtensionContext } from 'vscode';
 
 import {
   LanguageClient,
@@ -10,49 +10,67 @@ import {
 
 let client: LanguageClient;
 
-export function activate(_context: ExtensionContext) {
-  // uncomment to us TS server
-  // const serverModule = context.asAbsolutePath(
-  //   path.join('server', 'out', 'server.js')
-  // );
-  // const serverOptions: ServerOptions = {
-  //   run: { module: serverModule, transport: TransportKind.ipc },
-  //   debug: {
-  //     module: serverModule,
-  //     transport: TransportKind.ipc,
-  //   }
-  // };
-
+export function activate(context: ExtensionContext) {
   const command = process.env.SERVER_PATH || "roughly-good-enough-lsp";
-  console.log(command)
-  const run: Executable = {
-    command,
-    transport: TransportKind.stdio,
-    options: {
-      env: {
-        ...process.env,
-        RUST_LOG: "debug",
+  console.log("using server command:", command)
+
+  client = (() => {
+    const run: Executable = {
+      command,
+      transport: TransportKind.stdio,
+      options: {
+        env: {
+          ...process.env,
+          RUST_LOG: "debug",
+        },
       },
-    },
-  };
-  const serverOptions: ServerOptions = {
-    run,
-    debug: run,
-  };
+    };
 
-  const clientOptions: LanguageClientOptions = {
-    documentSelector: [{ scheme: "file", language: "r" }],
-    synchronize: {
-      // Notify the server about file changes to '.clientrc files contained in the workspace
-      fileEvents: workspace.createFileSystemWatcher('**/.clientrc')
-    },
-  };
+    const serverOptions: ServerOptions = {
+      run,
+      debug: run,
+    };
 
-  client = new LanguageClient(
-    'roughly-good-enough-lsp',
-    'R(oughly good enough) LSP',
-    serverOptions,
-    clientOptions
+    const clientOptions: LanguageClientOptions = {
+      documentSelector: [{ scheme: "file", language: "r" }],
+      synchronize: {
+        // Notify the server about file changes to '.clientrc files contained in the workspace
+        fileEvents: workspace.createFileSystemWatcher('**/.clientrc')
+      },
+    };
+
+    return new LanguageClient(
+      'roughly-good-enough-lsp',
+      'R(oughly good enough) LSP',
+      serverOptions,
+      clientOptions
+    )
+  })();
+
+  context.subscriptions.push(
+    commands.registerCommand(
+      "roughlyGoodEnoughLsp.restartLanguageServer",
+      async () => { await client.restart() }
+    ),
+  );
+
+  context.subscriptions.push(
+    workspace.onDidChangeConfiguration(async (change) => {
+      if (
+        change.affectsConfiguration("roughlyGoodEnoughLsp.path", undefined)) {
+        const choice = await window.showWarningMessage(
+          "Configuration change requires restarting the language server",
+          "Restart",
+        );
+        if (choice === "Restart") {
+          await client.restart();
+          setTimeout(() => {
+
+            client.outputChannel.show()
+          }, 1500)
+        }
+      }
+    }),
   );
 
   client.start(); // this also launches the server
