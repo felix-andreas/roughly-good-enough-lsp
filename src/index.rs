@@ -27,7 +27,11 @@ pub fn get_document_symbols(
     url: &Url,
     symbols_map: &DashMap<Url, Vec<DocumentSymbol>>,
 ) -> Vec<SymbolInformation> {
-    let symbols = symbols_map.get(url).unwrap(); // this seems to crash sometimes??
+    let Some(symbols) = symbols_map.get(url) else {
+        log::info!("failed to acquire symbols map");
+        // todo: understand when this happens
+        return vec![];
+    };
     filter_symbols("", url, &symbols)
 }
 

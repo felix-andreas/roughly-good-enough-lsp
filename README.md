@@ -71,7 +71,7 @@ Configure the client via the `settings.json` to use the server binary:
 
 ```json
 {
-  "roughlyGoodEnoughLsp.path" = "<path>"
+  "roughlyGoodEnoughLsp.path": "<path>"
 }
 ```
 
