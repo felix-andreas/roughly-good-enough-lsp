@@ -28,6 +28,7 @@
               devshell.overlays.default
               (import rust-overlay)
             ];
+            allowUnsupportedSystem = true;
           };
         rpkgs =
           pkgs: with pkgs.rPackages; [
@@ -40,8 +41,13 @@
           let
             pkgs = self.lib.makePkgs system nixpkgs;
           in
+          # pkgs.devshell.mkShell {
           pkgs.mkShell {
-            # motd = "";
+            motd = "";
+            depsBuildBuild = with pkgs; [
+              pkgsCross.mingwW64.stdenv.cc
+              pkgsCross.mingwW64.windows.pthreads
+            ];
             packages = with pkgs; [
               just
               (radianWrapper.override {
@@ -50,9 +56,10 @@
               })
               gnumake
               evcxr
-              (rust-bin.selectLatestNightlyWith (
+              (pkgs.rust-bin.selectLatestNightlyWith (
                 toolchain:
                 toolchain.default.override {
+                  targets = [ "x86_64-pc-windows-gnu" ];
                   extensions = [
                     "rust-src"
                     "rust-analyzer"
