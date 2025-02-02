@@ -52,7 +52,8 @@ fn filter_symbols(query: &str, url: &Url, symbols: &[DocumentSymbol]) -> Vec<Sym
         .collect::<Vec<SymbolInformation>>()
 }
 
-pub fn full_index(symbols_map: &DashMap<Url, Vec<DocumentSymbol>>) {
+pub fn index_full(symbols_map: &DashMap<Url, Vec<DocumentSymbol>>) -> Result<(), ()> {
+    log::info!("build new index");
     let cwd = std::env::current_dir().unwrap();
     if let Ok(entries) = std::fs::read_dir(cwd.join("R")) {
         for entry in entries {
@@ -71,21 +72,23 @@ pub fn full_index(symbols_map: &DashMap<Url, Vec<DocumentSymbol>>) {
                 };
 
                 let symbols = index_file(&path);
-                let url = Url::from_file_path(path).unwrap();
+                let url = Url::from_file_path(path)?;
                 symbols_map.insert(url, symbols);
             }
         }
     }
+    Ok(())
 }
 
-pub fn update_file(symbols_map: &DashMap<Url, Vec<DocumentSymbol>>, url: &Url) {
+pub fn index_update(symbols_map: &DashMap<Url, Vec<DocumentSymbol>>, url: &Url) {
+    log::info!("update index for {}", &url.path());
     let symbols = index_file(url.path());
     symbols_map.insert(url.clone(), symbols);
 }
 
 pub fn index_file(path: impl AsRef<Path>) -> Vec<DocumentSymbol> {
-    let Ok(text) = std::fs::read_to_string(path) else {
-        log::debug!("couldn't read file!");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        log::info!("indexing: couldn't read file: '{:?}'!", path.as_ref());
         return vec![];
     };
     index(&text)
@@ -98,39 +101,83 @@ fn index(text: &str) -> Vec<DocumentSymbol> {
         .map(|captures| captures.get(0).unwrap().start())
         .collect::<Vec<usize>>();
 
-    let assignments = regex!(r#"(?m)^([\w\.]+)\s*<-\s*(\\|function|\S)"#);
-    assignments
-        .captures_iter(text)
-        .map(|captures| {
-            let name = captures.get(1).unwrap();
-            let kind = captures.get(2).unwrap();
-            let name_end = name.end();
-            let line = newline_positions.partition_point(|&x| name_end > x) as u32;
-            let range = Range::new(
-                Position::new(line, name.start() as u32),
-                Position::new(line, name_end as u32),
-            );
-            #[allow(deprecated)]
-            DocumentSymbol {
-                name: name.as_str().to_string(),
-                detail: None,
-                kind: match kind.as_str() {
-                    "\\(" | "function" => SymbolKind::FUNCTION,
-                    _ => SymbolKind::VARIABLE,
-                },
-                tags: None,
-                deprecated: None,
-                range: range,
-                selection_range: range,
-                children: None,
-            }
-        })
-        .collect()
+    // todo: consider removing comments (gets tricky positions :/)
+    // could replace comments with whitespace
+
+    let globals = regex!(r#"(?m)^([\w\.]+)\s*<-\s*(\\\(|function|\S)"#);
+    let symbols_globals = globals.captures_iter(text).map(|captures| {
+        let name = captures.get(1).unwrap();
+        let kind = captures.get(2).unwrap();
+        let token_start = name.start();
+        let line = newline_positions.partition_point(|&x| token_start > x) as u32;
+        let range = Range::new(
+            Position::new(line, token_start as u32),
+            Position::new(line, name.end() as u32),
+        );
+
+        #[allow(deprecated)]
+        DocumentSymbol {
+            name: name.as_str().to_string(),
+            detail: None,
+            kind: match kind.as_str() {
+                "\\(" | "function" => SymbolKind::FUNCTION,
+                _ => SymbolKind::VARIABLE,
+            },
+            tags: None,
+            deprecated: None,
+            range: range,
+            selection_range: range,
+            children: None,
+        }
+    });
+
+    let s4 = regex!(
+        r#"(?m)(setClass|setGeneric|setMethod)\s*\(\s*["']([\w\.<-]+)["']\s*,\s*(?:["']([\w\.]+)["'])?"#
+    );
+    let symbolds_s4 = s4.captures_iter(text).map(|captures| {
+        let kind = captures.get(1).unwrap();
+        let first = captures.get(2).unwrap();
+        let second = captures.get(3);
+        let token_start = kind.start();
+        let line = newline_positions.partition_point(|&x| token_start > x) as u32;
+        let range = Range::new(
+            Position::new(line, kind.start() as u32),
+            Position::new(line, kind.end() as u32),
+        );
+
+        let (name, kind) = match kind.as_str() {
+            "setClass" => (first.as_str().to_string(), SymbolKind::CLASS),
+            "setGeneric" => (first.as_str().to_string(), SymbolKind::INTERFACE),
+            "setMethod" => (
+                format!(
+                    "{} ({})",
+                    first.as_str(),
+                    second.map(|m| m.as_str()).unwrap_or("UNKNOWN")
+                ),
+                SymbolKind::METHOD,
+            ),
+            _ => ("UNKNOWN".to_string(), SymbolKind::VARIABLE),
+        };
+
+        #[allow(deprecated)]
+        DocumentSymbol {
+            name,
+            detail: None,
+            kind,
+            tags: None,
+            deprecated: None,
+            range: range,
+            selection_range: range,
+            children: None,
+        }
+    });
+
+    symbols_globals.chain(symbolds_s4).collect()
 }
 
 #[cfg(test)]
 mod test {
-    use {super::index, indoc::indoc};
+    use {super::index, indoc::indoc, tower_lsp::lsp_types::SymbolKind};
 
     #[test]
     fn test_indexing() {
@@ -138,7 +185,52 @@ mod test {
 			foo <- function() {}
 			bar <- \(x) {}
 			baz <- 4
+            setClass("Person",
+                slots = c(
+                    name = "character",
+                    age = "numeric"
+                )
+            )
+            setClass(
+            "Car", slots = c(
+                name = 
+            "character"))
+            setGeneric("age", function(x) standardGeneric("age"))
+            setGeneric("age<-", function(x, value) standardGeneric("age<-"))
+            setMethod("age", "Person", function(x) x@age)
+            setMethod("age<-", "Person", function(x, value) {
+                x@age <- value
+                x
+            })
 		"#});
-        dbg!(symbols);
+
+        assert_eq!(symbols[0].name, "foo");
+        assert_eq!(symbols[0].kind, SymbolKind::FUNCTION);
+
+        assert_eq!(symbols[1].name, "bar");
+        assert_eq!(symbols[1].kind, SymbolKind::FUNCTION);
+
+        assert_eq!(symbols[2].name, "baz");
+        assert_eq!(symbols[2].kind, SymbolKind::VARIABLE);
+
+        assert_eq!(symbols[3].name, "Person");
+        assert_eq!(symbols[3].kind, SymbolKind::CLASS);
+
+        assert_eq!(symbols[4].name, "Car");
+        assert_eq!(symbols[4].kind, SymbolKind::CLASS);
+
+        assert_eq!(symbols[5].name, "age");
+        assert_eq!(symbols[5].kind, SymbolKind::INTERFACE);
+
+        assert_eq!(symbols[6].name, "age<-");
+        assert_eq!(symbols[6].kind, SymbolKind::INTERFACE);
+
+        assert_eq!(symbols[7].name, "age (Person)");
+        assert_eq!(symbols[7].kind, SymbolKind::METHOD);
+
+        assert_eq!(symbols[8].name, "age<- (Person)");
+        assert_eq!(symbols[8].kind, SymbolKind::METHOD);
+
+        assert_eq!(symbols.len(), 9);
     }
 }

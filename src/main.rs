@@ -13,7 +13,13 @@ struct Backend {
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
-        index::full_index(&self.symbols_map);
+        log::info!("server :: initialize");
+        if let Err(()) = index::index_full(&self.symbols_map) {
+            self.client
+                .show_message(MessageType::ERROR, "failed to index files")
+                .await;
+        }
+
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Options(
@@ -36,9 +42,7 @@ impl LanguageServer for Backend {
     }
 
     async fn initialized(&self, _: InitializedParams) {
-        self.client
-            .log_message(MessageType::INFO, "server initialized!")
-            .await;
+        log::info!("initialized")
     }
 
     async fn shutdown(&self) -> Result<()> {
@@ -53,21 +57,21 @@ impl LanguageServer for Backend {
         ])))
     }
 
-    async fn did_open(&self, _params: DidOpenTextDocumentParams) {
-        log::debug!("did open");
+    async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        log::debug!("did open {}", params.text_document.uri);
     }
 
-    async fn did_change(&self, _params: DidChangeTextDocumentParams) {
-        log::debug!("did change");
+    async fn did_change(&self, params: DidChangeTextDocumentParams) {
+        log::debug!("did change {}", params.text_document.uri);
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
-        index::update_file(&self.symbols_map, &params.text_document.uri);
-        log::debug!("did save");
+        log::debug!("did save {}", params.text_document.uri);
+        index::index_update(&self.symbols_map, &params.text_document.uri);
     }
 
-    async fn did_close(&self, _: DidCloseTextDocumentParams) {
-        log::debug!("did close");
+    async fn did_close(&self, params: DidCloseTextDocumentParams) {
+        log::debug!("did close {}", params.text_document.uri);
     }
 
     async fn document_symbol(
