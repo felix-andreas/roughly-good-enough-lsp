@@ -22,6 +22,8 @@ impl LanguageServer for Backend {
 
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
+                completion_provider: Some(CompletionOptions::default()),
+                document_symbol_provider: Some(OneOf::Left(true)),
                 text_document_sync: Some(TextDocumentSyncCapability::Options(
                     TextDocumentSyncOptions {
                         open_close: Some(false),
@@ -32,12 +34,13 @@ impl LanguageServer for Backend {
                         ..Default::default()
                     },
                 )),
-                completion_provider: Some(CompletionOptions::default()),
                 workspace_symbol_provider: Some(OneOf::Left(true)),
-                document_symbol_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
-            ..Default::default()
+            server_info: Some(ServerInfo {
+                name: env!("CARGO_PKG_NAME").into(),
+                version: Some(env!("CARGO_PKG_VERSION").into()),
+            }),
         })
     }
 
@@ -50,7 +53,9 @@ impl LanguageServer for Backend {
         Ok(())
     }
 
-    async fn completion(&self, _: CompletionParams) -> Result<Option<CompletionResponse>> {
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        dbg!(&params);
+        log::debug!("Request completion items");
         Ok(Some(CompletionResponse::Array(vec![
             CompletionItem::new_simple("Hello".to_string(), "Some detail".to_string()),
             CompletionItem::new_simple("Bye".to_string(), "More detail".to_string()),

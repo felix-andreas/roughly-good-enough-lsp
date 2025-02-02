@@ -47,21 +47,21 @@ Currenlty this extension assume that your `R` code has the following folder stru
 
 ### Client
 
-Bundle the client:
+Bundle the client (or [download from here](https://github.com/felix-andreas/roughly-good-enough-lsp/releases)):
 
 ```
 npm run package
 ```
 
-Install the extension to VS Code:
+Install the VS code extension:
 
 ```
-code --install-extension roughly-good-enough-lsp-x.x.x.vsix
+code --install-extension roughly-good-enough-lsp.vsix
 ```
 
 ### Server
 
-Build the server:
+Build the server (or [download from here](https://github.com/felix-andreas/roughly-good-enough-lsp/releases)):
 
 ```
 cargo build --release
@@ -70,7 +70,9 @@ cargo build --release
 Configure the client via the `settings.json` to use the server binary:
 
 ```json
-"roughlyGoodEnoughLsp.path" = "<path>",
+{
+  "roughlyGoodEnoughLsp.path" = "<path>"
+}
 ```
 
 ## Development
