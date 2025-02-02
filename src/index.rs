@@ -1,8 +1,4 @@
-use {
-    dashmap::DashMap,
-    std::path::Path,
-    tower_lsp::lsp_types::{DocumentSymbol, Position, Range, SymbolKind, Url},
-};
+use {dashmap::DashMap, std::path::Path, tower_lsp::lsp_types::*};
 
 macro_rules! regex {
     ($re:literal $(,)?) => {{
@@ -11,6 +7,49 @@ macro_rules! regex {
         static RE: OnceLock<Regex> = OnceLock::new();
         RE.get_or_init(|| Regex::new($re).unwrap())
     }};
+}
+
+pub fn get_workspace_symbols(
+    query: &str,
+    symbols_map: &DashMap<Url, Vec<DocumentSymbol>>,
+) -> Vec<SymbolInformation> {
+    symbols_map
+        .iter()
+        .flat_map(|ref_multi| {
+            let (url, symbols) = ref_multi.pair();
+            filter_symbols(query, url, symbols)
+        })
+        .take(32) // limit amount
+        .collect()
+}
+
+pub fn get_document_symbols(
+    url: &Url,
+    symbols_map: &DashMap<Url, Vec<DocumentSymbol>>,
+) -> Vec<SymbolInformation> {
+    let symbols = symbols_map.get(url).unwrap();
+    filter_symbols("", url, &symbols)
+}
+
+fn filter_symbols(query: &str, url: &Url, symbols: &[DocumentSymbol]) -> Vec<SymbolInformation> {
+    symbols
+        .iter()
+        .filter(|symbol| query == "" || symbol.name.starts_with(&query))
+        .map(|symbol| {
+            #[allow(deprecated)]
+            SymbolInformation {
+                name: symbol.name.to_string(),
+                kind: symbol.kind,
+                tags: None,
+                deprecated: None,
+                location: Location {
+                    uri: url.to_owned(),
+                    range: symbol.range,
+                },
+                container_name: None,
+            }
+        })
+        .collect::<Vec<SymbolInformation>>()
 }
 
 pub fn full_index(symbols_map: &DashMap<Url, Vec<DocumentSymbol>>) {
@@ -58,10 +97,9 @@ fn index(text: &str) -> Vec<DocumentSymbol> {
         .captures_iter(text)
         .map(|captures| captures.get(0).unwrap().start())
         .collect::<Vec<usize>>();
-    dbg!(&newline_positions);
 
-    let symbols = regex!(r#"(?m)^([\w\.]+)\s*<-\s*(\\|function|\S)"#);
-    symbols
+    let assignments = regex!(r#"(?m)^([\w\.]+)\s*<-\s*(\\|function|\S)"#);
+    assignments
         .captures_iter(text)
         .map(|captures| {
             let name = captures.get(1).unwrap();

@@ -18,17 +18,17 @@ impl LanguageServer for Backend {
             capabilities: ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Options(
                     TextDocumentSyncOptions {
-                        open_close: Some(true),
-                        change: Some(TextDocumentSyncKind::FULL),
+                        open_close: Some(false),
+                        change: Some(TextDocumentSyncKind::NONE),
                         save: Some(TextDocumentSyncSaveOptions::SaveOptions(SaveOptions {
-                            include_text: Some(true),
+                            include_text: Some(false),
                         })),
                         ..Default::default()
                     },
                 )),
-                hover_provider: Some(HoverProviderCapability::Simple(true)),
                 completion_provider: Some(CompletionOptions::default()),
                 workspace_symbol_provider: Some(OneOf::Left(true)),
+                document_symbol_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             ..Default::default()
@@ -38,9 +38,6 @@ impl LanguageServer for Backend {
     async fn initialized(&self, _: InitializedParams) {
         self.client
             .log_message(MessageType::INFO, "server initialized!")
-            .await;
-        self.client
-            .log_message(MessageType::INFO, "server initialized 2!")
             .await;
     }
 
@@ -72,39 +69,24 @@ impl LanguageServer for Backend {
         log::debug!("did close");
     }
 
+    async fn document_symbol(
+        &self,
+        params: DocumentSymbolParams,
+    ) -> Result<Option<DocumentSymbolResponse>> {
+        Ok(Some(DocumentSymbolResponse::Flat(
+            index::get_document_symbols(&params.text_document.uri, &self.symbols_map),
+        )))
+    }
+
     async fn symbol(
         &self,
         params: WorkspaceSymbolParams,
     ) -> Result<Option<Vec<SymbolInformation>>> {
         let query = params.query;
-        let max_results = 10;
-        Ok(Some(
-            self.symbols_map
-                .iter()
-                .flat_map(|ref_multi| {
-                    let (file, symbols) = ref_multi.pair();
-                    symbols
-                        .iter()
-                        .filter(|symbol| query == "" || symbol.name.starts_with(&query))
-                        .map(|symbol| {
-                            #[allow(deprecated)]
-                            SymbolInformation {
-                                name: symbol.name.to_string(),
-                                kind: symbol.kind,
-                                tags: None,
-                                deprecated: None,
-                                location: Location {
-                                    uri: file.to_owned(),
-                                    range: symbol.range,
-                                },
-                                container_name: None,
-                            }
-                        })
-                        .collect::<Vec<SymbolInformation>>()
-                })
-                .take(max_results)
-                .collect(),
-        ))
+        Ok(Some(index::get_workspace_symbols(
+            &query,
+            &self.symbols_map,
+        )))
     }
 
     async fn hover(&self, _: HoverParams) -> Result<Option<Hover>> {
