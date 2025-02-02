@@ -27,7 +27,7 @@ pub fn get_document_symbols(
     url: &Url,
     symbols_map: &DashMap<Url, Vec<DocumentSymbol>>,
 ) -> Vec<SymbolInformation> {
-    let symbols = symbols_map.get(url).unwrap();
+    let symbols = symbols_map.get(url).unwrap(); // this seems to crash sometimes??
     filter_symbols("", url, &symbols)
 }
 

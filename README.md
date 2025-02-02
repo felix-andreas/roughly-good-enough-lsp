@@ -1,4 +1,21 @@
-# R(oughly good enough) LSP
+<div align="center">
+
+# R(oughly good enough) LSP 🤔 
+
+</div>
+
+Welcome to the R(oughly good enough) LSP, where we skip the fancy AST parsing and got straight to the synatx (just regex), because who has time for that when your R project is already making your computer cry?
+
+## TODOs
+
+* Also index methods and generics, and classes
+* Implement go to definition
+* Make server path configurable
+* Add some simple diagnostics: Assignment and camelCase
+* Create build for extension
+* Add command to restart server
+* Use tree-sitter?
+* Add installation section
 
 ## Words of warning
 

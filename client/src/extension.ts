@@ -23,7 +23,6 @@ export function activate(_context: ExtensionContext) {
   //   }
   // };
 
-  const traceOutputChannel = window.createOutputChannel("R(oughly good enough) LSP trace");
   const command = process.env.SERVER_PATH || "roughly-good-enough-lsp";
   console.log(command)
   const run: Executable = {
@@ -47,7 +46,6 @@ export function activate(_context: ExtensionContext) {
       // Notify the server about file changes to '.clientrc files contained in the workspace
       fileEvents: workspace.createFileSystemWatcher('**/.clientrc')
     },
-    traceOutputChannel,
   };
 
   client = new LanguageClient(

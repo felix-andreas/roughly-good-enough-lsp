@@ -42,6 +42,7 @@ impl LanguageServer for Backend {
     }
 
     async fn shutdown(&self) -> Result<()> {
+        log::debug!("bye bye");
         Ok(())
     }
 
