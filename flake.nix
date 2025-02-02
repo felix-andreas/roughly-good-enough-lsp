@@ -49,6 +49,7 @@
                 wrapR = true;
               })
               gnumake
+              evcxr
               (rust-bin.selectLatestNightlyWith (
                 toolchain:
                 toolchain.default.override {
