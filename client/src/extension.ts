@@ -11,7 +11,10 @@ import {
 let client: LanguageClient;
 
 export function activate(context: ExtensionContext) {
-  const command = process.env.SERVER_PATH || "roughly-good-enough-lsp";
+  const config = workspace.getConfiguration("roughlyGoodEnoughLsp");
+  const lspPath = config.get<string>("path", "roughly-good-enough-lsp")
+
+  const command = process.env.SERVER_PATH || lspPath
   console.log("using server command:", command)
 
   client = (() => {

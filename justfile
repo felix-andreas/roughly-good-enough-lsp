@@ -6,3 +6,6 @@ test:
 
 bundle:
 	npm run package
+
+install:
+	code --install-extension roughly-good-enough-lsp-*.vsix

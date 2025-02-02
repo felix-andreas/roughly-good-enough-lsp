@@ -1,6 +1,6 @@
 <div align="center">
 
-# The R(oughly good enough) LSP 🤔 
+# The R(oughly good enough) LSP 🤔
 
 </div>
 
@@ -17,10 +17,10 @@ Welcome to the R(oughly good enough) LSP, where we skip the fancy AST parsing an
 * Use tree-sitter?
 * Better error handling
 * Also index the `NAMESPACE` file
-* Add Icon
 * Warn if no server found
 * Only one `package.json`
 * Do we need `tsconfig.tsbuildinfo` in VCS?
+* symbol ranges seem of (jump to symbol goes to end of line???)
 
 ## Features
 
@@ -103,4 +103,5 @@ For me this led to the issue that the language server wasn't spawned because I h
 * https://www.reddit.com/r/rust/comments/uu47mk/comment/i9dn0yg/
 
 ## License
+
 [GNU General Public License v3.0](LICENSE)

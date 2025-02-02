@@ -1,22 +1,28 @@
 {
 	"name": "roughly-good-enough-lsp",
+	"displayName": "The R(oughly good enough) LSP",
 	"description": "A roughly good enough language server for R",
 	"author": "Felix Andreas",
 	"version": "0.0.1",
 	"publisher": "felix-andreas",
+	"icon": "images/icon.png",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/felix-andreas/roughly-good-enough-lsp"
 	},
-	"categories": [],
+	"license": "GPL-3.0",
+	"categories": [
+		"Programming Languages"
+	],
 	"keywords": [
-		"multi-root ready"
+		"r"
 	],
 	"engines": {
 		"vscode": "^1.75.0"
 	},
 	"activationEvents": [
-		"onLanguage:plaintext"
+		"onLanguage:r",
+		"workspaceContains:R"
 	],
 	"main": "./client/out/extension",
 	"contributes": {

@@ -6,6 +6,7 @@
 !README.md
 !LICENSE
 !client/out/*.js
+!images/icon.png
 # allow js
 client/node_modules/**
 !client/node_modules/vscode-jsonrpc/**
