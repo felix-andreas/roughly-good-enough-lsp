@@ -1,11 +1,12 @@
-.vscode/**
-**/*.ts
-**/*.map
-.gitignore
-**/tsconfig.json
-**/tsconfig.base.json
-contributing.md
-.travis.yml
+# ignore everything
+*
+*/
+
+# allow what we need
+!README.md
+!LICENSE
+!client/out/*.js
+# allow js
 client/node_modules/**
 !client/node_modules/vscode-jsonrpc/**
 !client/node_modules/vscode-languageclient/**
