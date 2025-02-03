@@ -38,7 +38,7 @@ pub fn get_document_symbols(
 fn filter_symbols(query: &str, url: &Url, symbols: &[DocumentSymbol]) -> Vec<SymbolInformation> {
     symbols
         .iter()
-        .filter(|symbol| query == "" || symbol.name.starts_with(&query))
+        .filter(|symbol| query.is_empty() || symbol.name.starts_with(query))
         .map(|symbol| {
             #[allow(deprecated)]
             SymbolInformation {
@@ -85,8 +85,12 @@ pub fn index_full(symbols_map: &DashMap<Url, Vec<DocumentSymbol>>) -> Result<(),
 }
 
 pub fn index_update(symbols_map: &DashMap<Url, Vec<DocumentSymbol>>, url: &Url) {
-    log::info!("update index for {}", &url.path());
-    let symbols = index_file(url.path());
+    let Ok(path) = url.to_file_path() else {
+        log::error!("failed to get file path for {url}");
+        return;
+    };
+    log::info!("update index for {path:?}");
+    let symbols = index_file(path);
     symbols_map.insert(url.clone(), symbols);
 }
 
@@ -129,7 +133,7 @@ fn index(text: &str) -> Vec<DocumentSymbol> {
             },
             tags: None,
             deprecated: None,
-            range: range,
+            range,
             selection_range: range,
             children: None,
         }
@@ -170,13 +174,39 @@ fn index(text: &str) -> Vec<DocumentSymbol> {
             kind,
             tags: None,
             deprecated: None,
-            range: range,
+            range,
             selection_range: range,
             children: None,
         }
     });
 
     symbols_globals.chain(symbolds_s4).collect()
+}
+
+// DIAGNOSTICS
+
+pub async fn compute_diagnostics(uri: Url, _: &Rope) {
+    log::debug!("compute diagnostics for {uri}");
+    // let newlines = regex!(r#"\n"#);
+    // let newline_positions = newlines
+    //     .captures_iter(&rope)
+    //     .map(|captures| captures.get(0).unwrap().start())
+    //     .collect::<Vec<usize>>();
+
+    // let assignments = regex!(r#"(?m)(\s*)([\w\.]+)\s*<-"#);
+    // // todo: consider join_all from futures
+    // let diagnostics = assignments.captures_iter(&rope).map(|captures| {
+    //     let name = captures.get(1).unwrap();
+    //     let kind = captures.get(2).unwrap();
+    //     let token_start = name.start();
+    //     let line = newline_positions.partition_point(|&x| token_start > x) as u32;
+    //     let range = Range::new(
+    //         Position::new(line, token_start as u32),
+    //         Position::new(line, name.end() as u32),
+    //     );
+    // });
+    // let mut diagnostics = HashMap::from([(uri.clone(), Vec::new())]);
+    // https://github.com/jfecher/ante/blob/5f7446375bc1c6c94b44a44bfb89777c1437aaf5/ante-ls/src/main.rs#L252
 }
 
 #[cfg(test)]
@@ -237,30 +267,4 @@ mod test {
 
         assert_eq!(symbols.len(), 9);
     }
-}
-
-// DIAGNOSTICS
-
-pub async fn compute_diagnostics(uri: Url, _: &Rope) {
-    log::debug!("compute diagnostics for {uri}");
-    // let newlines = regex!(r#"\n"#);
-    // let newline_positions = newlines
-    //     .captures_iter(&rope)
-    //     .map(|captures| captures.get(0).unwrap().start())
-    //     .collect::<Vec<usize>>();
-
-    // let assignments = regex!(r#"(?m)(\s*)([\w\.]+)\s*<-"#);
-    // // todo: consider join_all from futures
-    // let diagnostics = assignments.captures_iter(&rope).map(|captures| {
-    //     let name = captures.get(1).unwrap();
-    //     let kind = captures.get(2).unwrap();
-    //     let token_start = name.start();
-    //     let line = newline_positions.partition_point(|&x| token_start > x) as u32;
-    //     let range = Range::new(
-    //         Position::new(line, token_start as u32),
-    //         Position::new(line, name.end() as u32),
-    //     );
-    // });
-    // let mut diagnostics = HashMap::from([(uri.clone(), Vec::new())]);
-    // https://github.com/jfecher/ante/blob/5f7446375bc1c6c94b44a44bfb89777c1437aaf5/ante-ls/src/main.rs#L252
 }

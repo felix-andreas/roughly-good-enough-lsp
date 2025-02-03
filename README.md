@@ -8,6 +8,7 @@ Welcome to the R(oughly good enough) LSP, where we skip the fancy AST parsing an
 
 ## TODOs
 
+* add command to bump versions
 * fix url to path on windows
 * Implement go to definition
 * Fix crash in `DashMap`

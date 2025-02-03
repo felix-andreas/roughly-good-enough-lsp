@@ -74,7 +74,7 @@ impl LanguageServer for Backend {
             let line = rope.get_line(position.line as usize)?;
             let mut query = String::new();
             for (i, char) in line.chars().enumerate() {
-                if char.is_alphabetic() || char == '.' || (query.len() > 0 && char.is_numeric()) {
+                if char.is_alphabetic() || char == '.' || (!query.is_empty() && char.is_numeric()) {
                     query.push(char)
                 } else {
                     query.clear();
@@ -109,9 +109,6 @@ impl LanguageServer for Backend {
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         log::debug!("did open {}", params.text_document.uri);
-        self.client
-            .log_message(MessageType::LOG, format!("ante-ls did_open: {:?}", params))
-            .await;
         let rope = Rope::from_str(&params.text_document.text);
         self.document_map
             .insert(params.text_document.uri.clone(), Document {
@@ -202,6 +199,8 @@ async fn main() {
         symbols_map: DashMap::new(),
         document_map: DashMap::new(),
     });
+
+    log::info!("starting language server ... listing for stdin");
     Server::new(stdin, stdout, socket).serve(service).await;
 }
 
