@@ -1,5 +1,6 @@
 use {
     dashmap::DashMap,
+    ropey::Rope,
     roughly_good_enough_lsp::index,
     tower_lsp::{Client, LanguageServer, LspService, Server, jsonrpc::Result, lsp_types::*},
 };
@@ -8,6 +9,12 @@ use {
 struct Backend {
     client: Client,
     symbols_map: DashMap<Url, Vec<DocumentSymbol>>,
+    document_map: DashMap<Url, Document>,
+}
+
+#[derive(Debug)]
+struct Document {
+    text: Rope,
 }
 
 #[tower_lsp::async_trait]
@@ -22,14 +29,18 @@ impl LanguageServer for Backend {
 
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
-                completion_provider: Some(CompletionOptions::default()),
+                completion_provider: Some(CompletionOptions {
+                    trigger_characters: Some(vec!["$".into(), "@".into()]),
+                    ..Default::default()
+                }),
+                definition_provider: Some(OneOf::Left(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
                 text_document_sync: Some(TextDocumentSyncCapability::Options(
                     TextDocumentSyncOptions {
-                        open_close: Some(false),
-                        change: Some(TextDocumentSyncKind::NONE),
+                        open_close: Some(true),
+                        change: Some(TextDocumentSyncKind::INCREMENTAL),
                         save: Some(TextDocumentSyncSaveOptions::SaveOptions(SaveOptions {
-                            include_text: Some(false),
+                            include_text: Some(true),
                         })),
                         ..Default::default()
                     },
@@ -54,29 +65,93 @@ impl LanguageServer for Backend {
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
-        dbg!(&params);
-        log::debug!("Request completion items");
-        Ok(Some(CompletionResponse::Array(vec![
-            CompletionItem::new_simple("Hello".to_string(), "Some detail".to_string()),
-            CompletionItem::new_simple("Bye".to_string(), "More detail".to_string()),
-        ])))
+        let uri = params.text_document_position.text_document.uri;
+        log::debug!("Request completion items for: {uri}");
+        let position = params.text_document_position.position;
+        // todo: proper error handling. make ropey, dashmap -> JSONRpc error
+        let completions = || -> Option<Vec<CompletionItem>> {
+            let rope = &self.document_map.get(&uri)?.text;
+            let line = rope.get_line(position.line as usize)?;
+            let mut query = String::new();
+            for (i, char) in line.chars().enumerate() {
+                if char.is_alphabetic() || char == '.' || (query.len() > 0 && char.is_numeric()) {
+                    query.push(char)
+                } else {
+                    query.clear();
+                }
+                if i == position.character as usize {
+                    break;
+                }
+            }
+
+            let symbols = index::get_workspace_symbols(&query, &self.symbols_map);
+
+            Some(
+                symbols
+                    .into_iter()
+                    .map(|symbol| CompletionItem {
+                        label: symbol.name,
+                        kind: Some(match symbol.kind {
+                            SymbolKind::FUNCTION => CompletionItemKind::FUNCTION,
+                            SymbolKind::CLASS => CompletionItemKind::CLASS,
+                            SymbolKind::METHOD => CompletionItemKind::METHOD,
+                            _ => CompletionItemKind::VARIABLE,
+                        }),
+                        detail: None,
+                        ..Default::default()
+                    })
+                    .collect(),
+            )
+        }();
+
+        Ok(completions.map(CompletionResponse::Array))
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         log::debug!("did open {}", params.text_document.uri);
+        self.client
+            .log_message(MessageType::LOG, format!("ante-ls did_open: {:?}", params))
+            .await;
+        let rope = Rope::from_str(&params.text_document.text);
+        self.document_map
+            .insert(params.text_document.uri.clone(), Document {
+                text: rope.clone(),
+            });
+        index::compute_diagnostics(params.text_document.uri, &rope).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         log::debug!("did change {}", params.text_document.uri);
+        self.document_map
+            .alter(&params.text_document.uri, |_, mut document| {
+                for change in params.content_changes {
+                    if let Some(range) = change.range {
+                        let range = util::lsp_range_to_rope_range(range, &document.text).unwrap();
+                        document.text.remove(range.clone());
+                        document.text.insert(range.start, &change.text);
+                    } else {
+                        document.text = Rope::from_str(&change.text)
+                    }
+                }
+                document
+            });
+        if let Some(document) = self.document_map.get(&params.text_document.uri) {
+            index::compute_diagnostics(params.text_document.uri, &document.text).await;
+        };
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         log::debug!("did save {}", params.text_document.uri);
-        index::index_update(&self.symbols_map, &params.text_document.uri);
-    }
+        if let Some(text) = params.text {
+            let rope = Rope::from_str(&text);
+            self.document_map
+                .insert(params.text_document.uri.clone(), Document { text: rope });
+        }
 
-    async fn did_close(&self, params: DidCloseTextDocumentParams) {
-        log::debug!("did close {}", params.text_document.uri);
+        index::index_update(&self.symbols_map, &params.text_document.uri);
+        if let Some(document) = self.document_map.get(&params.text_document.uri) {
+            index::compute_diagnostics(params.text_document.uri, &document.text).await;
+        };
     }
 
     async fn document_symbol(
@@ -86,6 +161,14 @@ impl LanguageServer for Backend {
         Ok(Some(DocumentSymbolResponse::Flat(
             index::get_document_symbols(&params.text_document.uri, &self.symbols_map),
         )))
+    }
+
+    async fn goto_definition(
+        &self,
+        _params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        // dbg!(params);
+        Ok(None)
     }
 
     async fn symbol(
@@ -117,6 +200,50 @@ async fn main() {
     let (service, socket) = LspService::new(|client| Backend {
         client,
         symbols_map: DashMap::new(),
+        document_map: DashMap::new(),
     });
     Server::new(stdin, stdout, socket).serve(service).await;
+}
+
+// UTILS
+
+#[allow(unused)]
+mod util {
+    use {
+        ropey::Rope,
+        tower_lsp::lsp_types::{Position, Range},
+    };
+
+    pub fn position_to_index(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
+        let line = position.line as usize;
+        let line = rope.try_line_to_char(line)?;
+        Ok(line + position.character as usize)
+    }
+
+    pub fn index_to_position(index: usize, rope: &Rope) -> Result<Position, ropey::Error> {
+        let line = rope.try_char_to_line(index)?;
+        let char = index - rope.line_to_char(line);
+        Ok(Position {
+            line: line as u32,
+            character: char as u32,
+        })
+    }
+
+    pub fn lsp_range_to_rope_range(
+        range: Range,
+        rope: &Rope,
+    ) -> Result<std::ops::Range<usize>, ropey::Error> {
+        let start = position_to_index(range.start, rope)?;
+        let end = position_to_index(range.end, rope)?;
+        Ok(start..end)
+    }
+
+    pub fn rope_range_to_lsp_range(
+        range: std::ops::Range<usize>,
+        rope: &Rope,
+    ) -> Result<Range, ropey::Error> {
+        let start = index_to_position(range.start, rope)?;
+        let end = index_to_position(range.end, rope)?;
+        Ok(Range { start, end })
+    }
 }

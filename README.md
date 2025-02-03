@@ -8,9 +8,9 @@ Welcome to the R(oughly good enough) LSP, where we skip the fancy AST parsing an
 
 ## TODOs
 
-* Fix crash in `DashMap`
-* Add autocomplete based on symbols
+* fix url to path on windows
 * Implement go to definition
+* Fix crash in `DashMap`
 * Add Indexing for R6
 * Make server path configurable
 * Add some simple diagnostics: Assignment and camelCase
@@ -102,7 +102,11 @@ For me this led to the issue that the language server wasn't spawned because I h
 
 * https://github.com/microsoft/vscode-extension-samples/tree/main/lsp-sample
 * https://github.com/semanticart/lsp-from-scratch
+* https://github.com/IWANABETHATGUY/tower-lsp-boilerplate
 * https://www.reddit.com/r/rust/comments/uu47mk/comment/i9dn0yg/
+* https://github.com/FuelLabs/sway
+* https://github.com/gleam-lang/gleam/tree/main/compiler-core/src/language_server
+* https://github.com/jfecher/ante/blob/5f7446375bc1c6c94b44a44bfb89777c1437aaf5/ante-ls/src/main.rs#L163
 
 ## License
 

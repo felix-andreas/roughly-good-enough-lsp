@@ -1,4 +1,4 @@
-use {dashmap::DashMap, std::path::Path, tower_lsp::lsp_types::*};
+use {dashmap::DashMap, ropey::Rope, std::path::Path, tower_lsp::lsp_types::*};
 
 macro_rules! regex {
     ($re:literal $(,)?) => {{
@@ -99,7 +99,7 @@ pub fn index_file(path: impl AsRef<Path>) -> Vec<DocumentSymbol> {
 }
 
 fn index(text: &str) -> Vec<DocumentSymbol> {
-    let newlines = regex!(r#"\r?\n"#);
+    let newlines = regex!(r#"\n"#);
     let newline_positions = newlines
         .captures_iter(text)
         .map(|captures| captures.get(0).unwrap().start())
@@ -237,4 +237,30 @@ mod test {
 
         assert_eq!(symbols.len(), 9);
     }
+}
+
+// DIAGNOSTICS
+
+pub async fn compute_diagnostics(uri: Url, _: &Rope) {
+    log::debug!("compute diagnostics for {uri}");
+    // let newlines = regex!(r#"\n"#);
+    // let newline_positions = newlines
+    //     .captures_iter(&rope)
+    //     .map(|captures| captures.get(0).unwrap().start())
+    //     .collect::<Vec<usize>>();
+
+    // let assignments = regex!(r#"(?m)(\s*)([\w\.]+)\s*<-"#);
+    // // todo: consider join_all from futures
+    // let diagnostics = assignments.captures_iter(&rope).map(|captures| {
+    //     let name = captures.get(1).unwrap();
+    //     let kind = captures.get(2).unwrap();
+    //     let token_start = name.start();
+    //     let line = newline_positions.partition_point(|&x| token_start > x) as u32;
+    //     let range = Range::new(
+    //         Position::new(line, token_start as u32),
+    //         Position::new(line, name.end() as u32),
+    //     );
+    // });
+    // let mut diagnostics = HashMap::from([(uri.clone(), Vec::new())]);
+    // https://github.com/jfecher/ante/blob/5f7446375bc1c6c94b44a44bfb89777c1437aaf5/ante-ls/src/main.rs#L252
 }
