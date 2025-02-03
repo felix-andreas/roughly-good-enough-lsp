@@ -79,10 +79,11 @@ impl LanguageServer for Backend {
                 } else {
                     query.clear();
                 }
-                if i == position.character as usize {
+                if i == (position.character - 1) as usize {
                     break;
                 }
             }
+            log::debug!("completion query: {query}");
 
             let symbols = index::get_workspace_symbols(&query, &self.symbols_map);
 
