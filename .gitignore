@@ -1,8 +1,12 @@
+.direnv
+result
+
 out
 node_modules
-client/server
+*.tsbuildinfo
+
 .vscode-test
-.direnv
 *.vsix
+
 /target
-release
+/release

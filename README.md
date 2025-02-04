@@ -93,6 +93,8 @@ For me this led to the issue that the language server wasn't spawned because I h
 * https://github.com/FuelLabs/sway
 * https://github.com/gleam-lang/gleam/tree/main/compiler-core/src/language_server
 * https://github.com/jfecher/ante/blob/5f7446375bc1c6c94b44a44bfb89777c1437aaf5/ante-ls/src/main.rs#L163
+* https://github.com/ziglang/vscode-zig/
+* https://github.com/nix-community/vscode-nix-ide
 
 ## License
 
