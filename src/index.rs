@@ -57,7 +57,7 @@ fn filter_symbols(query: &str, url: &Url, symbols: &[DocumentSymbol]) -> Vec<Sym
 }
 
 pub fn index_full(symbols_map: &DashMap<Url, Vec<DocumentSymbol>>) -> Result<(), ()> {
-    log::info!("build new index");
+    let mut n = 0;
     let cwd = std::env::current_dir().unwrap();
     if let Ok(entries) = std::fs::read_dir(cwd.join("R")) {
         for entry in entries {
@@ -76,11 +76,14 @@ pub fn index_full(symbols_map: &DashMap<Url, Vec<DocumentSymbol>>) -> Result<(),
                 };
 
                 let symbols = index_file(&path);
+                n += symbols.len();
                 let url = Url::from_file_path(path)?;
                 symbols_map.insert(url, symbols);
             }
         }
     }
+
+    log::info!("build new index ({n} symbols)");
     Ok(())
 }
 

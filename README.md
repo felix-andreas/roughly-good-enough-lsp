@@ -6,23 +6,6 @@
 
 Welcome to the R(oughly good enough) LSP, where we skip the fancy AST parsing and got straight to the synatx (just regex), because who has time for that when your R project is already making your computer cry?
 
-## TODOs
-
-* add command to bump versions
-* fix url to path on windows
-* Implement go to definition
-* Fix crash in `DashMap`
-* Add Indexing for R6
-* Make server path configurable
-* Add some simple diagnostics: Assignment and camelCase
-* Use tree-sitter?
-* Better error handling
-* Also index the `NAMESPACE` file
-* Warn if no server found
-* Only one `package.json`
-* Do we need `tsconfig.tsbuildinfo` in VCS?
-* symbol ranges seem of (jump to symbol goes to end of line???)
-
 ## Features
 
 * Indexing
@@ -31,6 +14,8 @@ Welcome to the R(oughly good enough) LSP, where we skip the fancy AST parsing an
     * Classes
     * Generics
     * Methods
+* Goto Workspace Symbol <kbd>Ctrl</kbd> + <kbd>T</kbd>
+* Goto Document Symbol <kbd>Ctrl</kbd> <kbd>Shift</kbd> + <kbd>O</kbd>
 * Commands
   * Restart Language Server
 

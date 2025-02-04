@@ -53,7 +53,21 @@ export function activate(context: ExtensionContext) {
   context.subscriptions.push(
     commands.registerCommand(
       "roughlyGoodEnoughLsp.restartLanguageServer",
-      async () => { await client.restart() }
+      async () => { await client.start() }
+    ),
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand(
+      "roughlyGoodEnoughLsp.startLanguageServer",
+      async () => { await client.start() }
+    ),
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand(
+      "roughlyGoodEnoughLsp.stopLanguageServer",
+      async () => { await client.stop() }
     ),
   );
 

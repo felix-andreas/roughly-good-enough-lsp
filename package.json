@@ -30,6 +30,14 @@
 			{
 				"title": "R(oughly good enough) LSP: Restart Language Server",
 				"command": "roughlyGoodEnoughLsp.restartLanguageServer"
+			},
+			{
+				"title": "R(oughly good enough) LSP: Start Language Server",
+				"command": "roughlyGoodEnoughLsp.StartLanguageServer"
+			},
+			{
+				"title": "R(oughly good enough) LSP: Stop Language Server",
+				"command": "roughlyGoodEnoughLsp.StopLanguageServer"
 			}
 		],
 		"configuration": {
