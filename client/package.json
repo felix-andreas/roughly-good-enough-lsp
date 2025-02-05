@@ -2,7 +2,7 @@
 	"name": "roughly",
 	"description": "A roughly good enough language server for R",
 	"author": "Felix Andreas",
-	"version": "0.0.0",
+	"version": "0.0.1",
 	"publisher": "felix-andreas",
 	"repository": {
 		"type": "git",
