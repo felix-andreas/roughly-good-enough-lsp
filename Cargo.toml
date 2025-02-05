@@ -1,6 +1,6 @@
 [package]
 name = "roughly-good-enough-lsp"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
 
 [dependencies]
@@ -10,5 +10,7 @@ indoc = "2.0.5"
 log = "0.4.25"
 regex = "1.11.1"
 ropey = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
+tokio = { version = "0.0.1", features = ["rt-multi-thread", "macros", "io-std"] }
 tower-lsp = "0.20"
+tree-sitter = "0.25.1"
+tree-sitter-r = "1.1.0"
