@@ -3,7 +3,7 @@
 	"displayName": "The R(oughly good enough) LSP",
 	"description": "A roughly good enough language server for R",
 	"author": "Felix Andreas",
-	"version": "0.0.1",
+	"version": "0.0.0",
 	"publisher": "felix-andreas",
 	"icon": "images/icon.png",
 	"repository": {

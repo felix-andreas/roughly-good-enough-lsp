@@ -1,10 +1,10 @@
 <div align="center">
 
-# The R(oughly good enough) LSP 🤔
+# The R(oughly good enough) Language Server 🤔
 
 </div>
 
-Welcome to the R(oughly good enough) LSP, where we skip the fancy AST parsing and got straight to the synatx (just regex), because who has time for that when your R project is already making your computer cry?
+Welcome to the R(oughly good enough) Language Server, where we skip the fancy AST parsing and got straight to the synatx (just regex), because who has time for that when your R project is already making your computer cry?
 
 ## Features
 
