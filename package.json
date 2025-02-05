@@ -33,11 +33,11 @@
 			},
 			{
 				"title": "Roughly: Start Language Server",
-				"command": "roughly.StartLanguageServer"
+				"command": "roughly.startLanguageServer"
 			},
 			{
 				"title": "Roughly: Stop Language Server",
-				"command": "roughly.StopLanguageServer"
+				"command": "roughly.stopLanguageServer"
 			}
 		],
 		"configuration": {

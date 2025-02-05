@@ -5,7 +5,7 @@ bundle *args:
 	npm run package -- {{args}}
 
 install:
-	code --install-extension roughly-*.vsix
+	code --install-extension roughly-*.vsix --force
 
 linux:
 	cargo build --release

@@ -1,4 +1,4 @@
-import { window, commands, workspace, ExtensionContext } from 'vscode';
+import { window, commands, workspace, ExtensionContext } from 'vscode'
 
 import {
   LanguageClient,
@@ -6,12 +6,12 @@ import {
   ServerOptions,
   TransportKind,
   Executable
-} from 'vscode-languageclient/node';
+} from 'vscode-languageclient/node'
 
-let client: LanguageClient;
+let client: LanguageClient
 
 export function activate(context: ExtensionContext) {
-  const config = workspace.getConfiguration("roughly");
+  const config = workspace.getConfiguration("roughly")
   const lspPath = config.get<string>("path", "roughly")
 
   const command = process.env.SERVER_PATH || lspPath
@@ -27,12 +27,12 @@ export function activate(context: ExtensionContext) {
           RUST_LOG: "debug",
         },
       },
-    };
+    }
 
     const serverOptions: ServerOptions = {
       run,
       debug: run,
-    };
+    }
 
     const clientOptions: LanguageClientOptions = {
       documentSelector: [{ scheme: "file", language: "r" }],
@@ -40,7 +40,7 @@ export function activate(context: ExtensionContext) {
         // Notify the server about file changes to '.clientrc files contained in the workspace
         fileEvents: workspace.createFileSystemWatcher('**/.clientrc')
       },
-    };
+    }
 
     return new LanguageClient(
       'roughly',
@@ -48,28 +48,28 @@ export function activate(context: ExtensionContext) {
       serverOptions,
       clientOptions
     )
-  })();
+  })()
 
   context.subscriptions.push(
     commands.registerCommand(
       "roughly.restartLanguageServer",
-      async () => { await client.start() }
+      async () => { await client.restart() }
     ),
-  );
+  )
 
   context.subscriptions.push(
     commands.registerCommand(
       "roughly.startLanguageServer",
       async () => { await client.start() }
     ),
-  );
+  )
 
   context.subscriptions.push(
     commands.registerCommand(
       "roughly.stopLanguageServer",
       async () => { await client.stop() }
     ),
-  );
+  )
 
   context.subscriptions.push(
     workspace.onDidChangeConfiguration(async (change) => {
@@ -78,9 +78,9 @@ export function activate(context: ExtensionContext) {
         const choice = await window.showWarningMessage(
           "Configuration change requires restarting the language server",
           "Restart",
-        );
+        )
         if (choice === "Restart") {
-          await client.restart();
+          await client.restart()
           setTimeout(() => {
 
             client.outputChannel.show()
@@ -88,14 +88,14 @@ export function activate(context: ExtensionContext) {
         }
       }
     }),
-  );
+  )
 
-  client.start(); // this also launches the server
+  client.start() // this also launches the server
 }
 
 export function deactivate(): Thenable<void> | undefined {
   if (!client) {
-    return undefined;
+    return undefined
   }
-  return client.stop();
+  return client.stop()
 }
