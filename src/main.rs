@@ -19,6 +19,10 @@ struct Document {
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
+    //
+    // LIFE CYLE METHODS
+    //
+
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
         log::info!("server :: initialize");
         if let Err(()) = index::index_full(&self.symbols_map) {
@@ -33,7 +37,7 @@ impl LanguageServer for Backend {
                     trigger_characters: Some(vec!["$".into(), "@".into()]),
                     ..Default::default()
                 }),
-                definition_provider: Some(OneOf::Left(true)),
+                // definition_provider: Some(OneOf::Left(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
                 text_document_sync: Some(TextDocumentSyncCapability::Options(
                     TextDocumentSyncOptions {
@@ -63,50 +67,9 @@ impl LanguageServer for Backend {
         log::debug!("bye bye");
         Ok(())
     }
-
-    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
-        let uri = params.text_document_position.text_document.uri;
-        log::debug!("Request completion items for: {uri}");
-        let position = params.text_document_position.position;
-        // todo: proper error handling. make ropey, dashmap -> JSONRpc error
-        let completions = || -> Option<Vec<CompletionItem>> {
-            let rope = &self.document_map.get(&uri)?.text;
-            let line = rope.get_line(position.line as usize)?;
-            let mut query = String::new();
-            for (i, char) in line.chars().enumerate() {
-                if char.is_alphabetic() || char == '.' || (!query.is_empty() && char.is_numeric()) {
-                    query.push(char)
-                } else {
-                    query.clear();
-                }
-                if i == (position.character - 1) as usize {
-                    break;
-                }
-            }
-            log::debug!("completion query: {query}");
-
-            let symbols = index::get_workspace_symbols(&query, &self.symbols_map);
-
-            Some(
-                symbols
-                    .into_iter()
-                    .map(|symbol| CompletionItem {
-                        label: symbol.name,
-                        kind: Some(match symbol.kind {
-                            SymbolKind::FUNCTION => CompletionItemKind::FUNCTION,
-                            SymbolKind::CLASS => CompletionItemKind::CLASS,
-                            SymbolKind::METHOD => CompletionItemKind::METHOD,
-                            _ => CompletionItemKind::VARIABLE,
-                        }),
-                        detail: None,
-                        ..Default::default()
-                    })
-                    .collect(),
-            )
-        }();
-
-        Ok(completions.map(CompletionResponse::Array))
-    }
+    //
+    // TEXT SYNC
+    //
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         log::debug!("did open {}", params.text_document.uri);
@@ -152,6 +115,58 @@ impl LanguageServer for Backend {
         };
     }
 
+    //
+    // COMPLETION
+    //
+
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        let uri = params.text_document_position.text_document.uri;
+        log::debug!("Request completion items for: {uri}");
+        let position = params.text_document_position.position;
+        // todo: proper error handling. make ropey, dashmap -> JSONRpc error
+        let completions = || -> Option<Vec<CompletionItem>> {
+            let rope = &self.document_map.get(&uri)?.text;
+            let line = rope.get_line(position.line as usize)?;
+            let mut query = String::new();
+            for (i, char) in line.chars().enumerate() {
+                if char.is_alphabetic() || char == '.' || (!query.is_empty() && char.is_numeric()) {
+                    query.push(char)
+                } else {
+                    query.clear();
+                }
+                if i == (position.character - 1) as usize {
+                    break;
+                }
+            }
+            log::debug!("completion query: {query}");
+
+            let symbols = index::get_workspace_symbols(&query, &self.symbols_map, 1000);
+
+            Some(
+                symbols
+                    .into_iter()
+                    .map(|symbol| CompletionItem {
+                        label: symbol.name,
+                        kind: Some(match symbol.kind {
+                            SymbolKind::FUNCTION => CompletionItemKind::FUNCTION,
+                            SymbolKind::CLASS => CompletionItemKind::CLASS,
+                            SymbolKind::METHOD => CompletionItemKind::METHOD,
+                            _ => CompletionItemKind::VARIABLE,
+                        }),
+                        detail: None,
+                        ..Default::default()
+                    })
+                    .collect(),
+            )
+        }();
+
+        Ok(completions.map(CompletionResponse::Array))
+    }
+
+    //
+    // SYMBOLS
+    //
+
     async fn document_symbol(
         &self,
         params: DocumentSymbolParams,
@@ -161,31 +176,24 @@ impl LanguageServer for Backend {
         )))
     }
 
-    async fn goto_definition(
-        &self,
-        _params: GotoDefinitionParams,
-    ) -> Result<Option<GotoDefinitionResponse>> {
-        // dbg!(params);
-        Ok(None)
-    }
-
     async fn symbol(
         &self,
         params: WorkspaceSymbolParams,
     ) -> Result<Option<Vec<SymbolInformation>>> {
-        let query = params.query;
         Ok(Some(index::get_workspace_symbols(
-            &query,
+            &params.query,
             &self.symbols_map,
+            32,
         )))
     }
 
-    async fn hover(&self, _: HoverParams) -> Result<Option<Hover>> {
-        Ok(Some(Hover {
-            contents: HoverContents::Scalar(MarkedString::String("You're hovering!".to_string())),
-            range: None,
-        }))
-    }
+    // async fn goto_definition(
+    //     &self,
+    //     params: GotoDefinitionParams,
+    // ) -> Result<Option<GotoDefinitionResponse>> {
+    //     // dbg!(params);
+    //     Ok(None)
+    // }
 }
 
 #[tokio::main]

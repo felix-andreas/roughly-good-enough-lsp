@@ -12,15 +12,18 @@ macro_rules! regex {
 pub fn get_workspace_symbols(
     query: &str,
     symbols_map: &DashMap<Url, Vec<DocumentSymbol>>,
+    limit: usize,
 ) -> Vec<SymbolInformation> {
-    symbols_map
+    let workspace_symbols: Vec<_> = symbols_map
         .iter()
         .flat_map(|ref_multi| {
             let (url, symbols) = ref_multi.pair();
             filter_symbols(query, url, symbols)
         })
-        .take(32) // limit amount
-        .collect()
+        .take(limit) // limit amount
+        .collect();
+    log::info!("get workspace symbols {}", workspace_symbols.len());
+    workspace_symbols
 }
 
 pub fn get_document_symbols(
@@ -38,7 +41,13 @@ pub fn get_document_symbols(
 fn filter_symbols(query: &str, url: &Url, symbols: &[DocumentSymbol]) -> Vec<SymbolInformation> {
     symbols
         .iter()
-        .filter(|symbol| query.is_empty() || symbol.name.starts_with(query))
+        .filter(|symbol| {
+            query.is_empty()
+                || symbol
+                    .name
+                    .to_lowercase()
+                    .starts_with(&query.to_lowercase())
+        })
         .map(|symbol| {
             #[allow(deprecated)]
             SymbolInformation {
