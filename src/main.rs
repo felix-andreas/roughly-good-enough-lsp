@@ -1,7 +1,7 @@
 use {
     dashmap::DashMap,
     ropey::Rope,
-    roughly_good_enough_lsp::index,
+    roughly::index,
     tower_lsp::{Client, LanguageServer, LspService, Server, jsonrpc::Result, lsp_types::*},
 };
 

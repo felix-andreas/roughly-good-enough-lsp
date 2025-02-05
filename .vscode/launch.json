@@ -19,7 +19,7 @@
 				"script": "watch"
 			},
 			"env": {
-				"SERVER_PATH": "${workspaceRoot}/target/debug/roughly-good-enough-lsp"
+				"SERVER_PATH": "${workspaceRoot}/target/debug/roughly"
 			}
 		},
 		{

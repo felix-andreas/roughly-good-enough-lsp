@@ -11,8 +11,8 @@ import {
 let client: LanguageClient;
 
 export function activate(context: ExtensionContext) {
-  const config = workspace.getConfiguration("roughlyGoodEnoughLsp");
-  const lspPath = config.get<string>("path", "roughly-good-enough-lsp")
+  const config = workspace.getConfiguration("roughly");
+  const lspPath = config.get<string>("path", "roughly")
 
   const command = process.env.SERVER_PATH || lspPath
   console.log("using server command:", command)
@@ -43,8 +43,8 @@ export function activate(context: ExtensionContext) {
     };
 
     return new LanguageClient(
-      'roughly-good-enough-lsp',
-      'R(oughly good enough) LSP',
+      'roughly',
+      'Roughly',
       serverOptions,
       clientOptions
     )
@@ -52,21 +52,21 @@ export function activate(context: ExtensionContext) {
 
   context.subscriptions.push(
     commands.registerCommand(
-      "roughlyGoodEnoughLsp.restartLanguageServer",
+      "roughly.restartLanguageServer",
       async () => { await client.start() }
     ),
   );
 
   context.subscriptions.push(
     commands.registerCommand(
-      "roughlyGoodEnoughLsp.startLanguageServer",
+      "roughly.startLanguageServer",
       async () => { await client.start() }
     ),
   );
 
   context.subscriptions.push(
     commands.registerCommand(
-      "roughlyGoodEnoughLsp.stopLanguageServer",
+      "roughly.stopLanguageServer",
       async () => { await client.stop() }
     ),
   );
@@ -74,7 +74,7 @@ export function activate(context: ExtensionContext) {
   context.subscriptions.push(
     workspace.onDidChangeConfiguration(async (change) => {
       if (
-        change.affectsConfiguration("roughlyGoodEnoughLsp.path", undefined)) {
+        change.affectsConfiguration("roughly.path", undefined)) {
         const choice = await window.showWarningMessage(
           "Configuration change requires restarting the language server",
           "Restart",
