@@ -27,7 +27,7 @@ bump-version $version:
 	sed -i 's/"version": "[a-zA-Z0-9._-]*"/"version": "{{version}}"/' client/package.json
 	sed -i 's/^version = "[a-zA-Z0-9._-]*"/version = "{{version}}"/' Cargo.toml
 	cargo check # bonus: also updates version in lock file
-	git add package.json client/package.json Cargo.toml
+	git add package.json client/package.json Cargo.toml Cargo.lock
 	git commit -m "chore: Release v{{version}}"
 
 build-release $version="":
