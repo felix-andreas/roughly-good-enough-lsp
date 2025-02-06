@@ -1,14 +1,14 @@
 {
-	"name": "roughly-good-enough-lsp",
-	"displayName": "The R(oughly good enough) LSP",
-	"description": "A roughly good enough language server for R",
+	"name": "roughly",
+	"displayName": "Roughly",
+	"description": "The R(oughly good enough) Language Server",
 	"author": "Felix Andreas",
 	"version": "0.0.1",
 	"publisher": "felix-andreas",
 	"icon": "images/icon.png",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/felix-andreas/roughly-good-enough-lsp"
+		"url": "https://github.com/felix-andreas/roughly"
 	},
 	"license": "GPL-3.0",
 	"categories": [
@@ -28,36 +28,36 @@
 	"contributes": {
 		"commands": [
 			{
-				"title": "R(oughly good enough) LSP: Restart Language Server",
-				"command": "roughlyGoodEnoughLsp.restartLanguageServer"
+				"title": "Roughly: Restart Language Server",
+				"command": "roughly.restartLanguageServer"
 			},
 			{
-				"title": "R(oughly good enough) LSP: Start Language Server",
-				"command": "roughlyGoodEnoughLsp.StartLanguageServer"
+				"title": "Roughly: Start Language Server",
+				"command": "roughly.startLanguageServer"
 			},
 			{
-				"title": "R(oughly good enough) LSP: Stop Language Server",
-				"command": "roughlyGoodEnoughLsp.StopLanguageServer"
+				"title": "Roughly: Stop Language Server",
+				"command": "roughly.stopLanguageServer"
 			}
 		],
 		"configuration": {
 			"type": "object",
-			"title": "R(oughly good enough) LSP",
+			"title": "Roughly",
 			"properties": {
-				"roughlyGoodEnoughLsp.path": {
+				"roughly.path": {
 					"scope": "machine-overridable",
 					"type": "string",
-					"default": "roughly-good-enough-lsp",
+					"default": "roughly",
 					"description": "Location of the language server command.",
 					"format": "path"
 				},
-				"roughlyGoodEnoughLsp.maxNumberOfProblems": {
+				"roughly.maxNumberOfProblems": {
 					"scope": "resource",
 					"type": "number",
 					"default": 100,
 					"description": "Controls the maximum number of problems produced by the server."
 				},
-				"roughlyGoodEnoughLsp.trace.server": {
+				"roughly.trace.server": {
 					"scope": "window",
 					"type": "string",
 					"enum": [

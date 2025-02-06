@@ -66,6 +66,7 @@ fn filter_symbols(query: &str, url: &Url, symbols: &[DocumentSymbol]) -> Vec<Sym
 }
 
 pub fn index_full(symbols_map: &DashMap<Url, Vec<DocumentSymbol>>) -> Result<(), ()> {
+    let start = std::time::Instant::now();
     let mut n = 0;
     let cwd = std::env::current_dir().unwrap();
     if let Ok(entries) = std::fs::read_dir(cwd.join("R")) {
@@ -92,16 +93,23 @@ pub fn index_full(symbols_map: &DashMap<Url, Vec<DocumentSymbol>>) -> Result<(),
         }
     }
 
-    log::info!("build new index ({n} symbols)");
+    log::info!(
+        "build new index ({n} symbols) in {} ms",
+        start.elapsed().as_millis()
+    );
     Ok(())
 }
 
 pub fn index_update(symbols_map: &DashMap<Url, Vec<DocumentSymbol>>, url: &Url) {
+    let start = std::time::Instant::now();
     let Ok(path) = url.to_file_path() else {
         log::error!("failed to get file path for {url}");
         return;
     };
-    log::info!("update index for {path:?}");
+    log::info!(
+        "update index for {path:?} in {} ms",
+        start.elapsed().as_millis()
+    );
     let symbols = index_file(path);
     symbols_map.insert(url.clone(), symbols);
 }

@@ -1,10 +1,12 @@
 <div align="center">
 
-# The R(oughly good enough) LSP 🤔
+# Roughly 🔥
+
+### The R(oughly good enough) Language Server
 
 </div>
 
-Welcome to the R(oughly good enough) LSP, where we skip the fancy AST parsing and got straight to the synatx (just regex), because who has time for that when your R project is already making your computer cry?
+Welcome to Roughly, the language server where we skip the fancy AST parsing and go straight to the syntax (just regex), because who has time for that when your R project is already making your computer cry?
 
 ## Features
 
@@ -33,7 +35,7 @@ Currenlty this extension assume that your `R` code has the following folder stru
 
 ### Client
 
-Bundle the client (or [download from here](https://github.com/felix-andreas/roughly-good-enough-lsp/releases)):
+Bundle the client (or [download from here](https://github.com/felix-andreas/roughly/releases)):
 
 ```
 npm run package
@@ -42,12 +44,12 @@ npm run package
 Install the VS code extension:
 
 ```
-code --install-extension roughly-good-enough-lsp.vsix
+code --install-extension roughly.vsix
 ```
 
 ### Server
 
-Build the server (or [download from here](https://github.com/felix-andreas/roughly-good-enough-lsp/releases)):
+Build the server (or [download from here](https://github.com/felix-andreas/roughly/releases)):
 
 ```
 cargo build --release
@@ -57,7 +59,7 @@ Configure the client via the `settings.json` to use the server binary:
 
 ```json
 {
-  "roughlyGoodEnoughLsp.path": "<path>"
+  "roughly.path": "<path>"
 }
 ```
 
@@ -95,6 +97,8 @@ For me this led to the issue that the language server wasn't spawned because I h
 * https://github.com/jfecher/ante/blob/5f7446375bc1c6c94b44a44bfb89777c1437aaf5/ante-ls/src/main.rs#L163
 * https://github.com/ziglang/vscode-zig/
 * https://github.com/nix-community/vscode-nix-ide
+* https://github.com/wch/r-source/blob/trunk/src/main/gram.y
+* https://cran.r-project.org/doc/manuals/r-release/R-lang.html
 
 ## License
 

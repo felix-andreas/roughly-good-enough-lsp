@@ -1,7 +1,7 @@
 use {
     dashmap::DashMap,
     ropey::Rope,
-    roughly_good_enough_lsp::index,
+    roughly::index,
     tower_lsp::{Client, LanguageServer, LspService, Server, jsonrpc::Result, lsp_types::*},
 };
 
@@ -142,10 +142,37 @@ impl LanguageServer for Backend {
 
             let symbols = index::get_workspace_symbols(&query, &self.symbols_map, 1000);
 
+            const RESERVED_WORDS: &[&str] = &[
+                "if",
+                "else",
+                "repeat",
+                "while",
+                "function",
+                "for",
+                "in",
+                "next",
+                "break",
+                "TRUE",
+                "FALSE",
+                "NULL",
+                "Inf",
+                "NaN",
+                "NA",
+                "NA_integer_",
+                "NA_real_",
+                "NA_complex_",
+                "NA_character_",
+            ];
+
             Some(
-                symbols
-                    .into_iter()
-                    .map(|symbol| CompletionItem {
+                RESERVED_WORDS
+                    .iter()
+                    .map(|reserved_word| CompletionItem {
+                        label: reserved_word.to_string(),
+                        kind: Some(CompletionItemKind::KEYWORD),
+                        ..Default::default()
+                    })
+                    .chain(symbols.into_iter().map(|symbol| CompletionItem {
                         label: symbol.name,
                         kind: Some(match symbol.kind {
                             SymbolKind::FUNCTION => CompletionItemKind::FUNCTION,
@@ -155,7 +182,7 @@ impl LanguageServer for Backend {
                         }),
                         detail: None,
                         ..Default::default()
-                    })
+                    }))
                     .collect(),
             )
         }();
