@@ -1,8 +1,12 @@
 use {
     dashmap::DashMap,
     ropey::Rope,
-    roughly::index,
+    roughly::{
+        index::{self, parse},
+        utils,
+    },
     tower_lsp::{Client, LanguageServer, LspService, Server, jsonrpc::Result, lsp_types::*},
+    tree_sitter::Tree,
 };
 
 #[derive(Debug)]
@@ -14,7 +18,8 @@ struct Backend {
 
 #[derive(Debug)]
 struct Document {
-    text: Rope,
+    rope: Rope,
+    tree: Tree,
 }
 
 #[tower_lsp::async_trait]
@@ -71,14 +76,18 @@ impl LanguageServer for Backend {
     // TEXT SYNC
     //
 
+    // todo: read https://github.com/TenStrings/glicol-lsp/blob/77e97d9c687dc5d66871ad5ec91b6f049de2b8e8/src/main.rs#L76C2-L91C6
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         log::debug!("did open {}", params.text_document.uri);
         let rope = Rope::from_str(&params.text_document.text);
+        let tree = index::parse(&params.text_document.text);
+        index::compute_diagnostics(params.text_document.uri.clone(), &rope).await;
+
         self.document_map
             .insert(params.text_document.uri.clone(), Document {
-                text: rope.clone(),
+                rope: rope,
+                tree,
             });
-        index::compute_diagnostics(params.text_document.uri, &rope).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -87,31 +96,36 @@ impl LanguageServer for Backend {
             .alter(&params.text_document.uri, |_, mut document| {
                 for change in params.content_changes {
                     if let Some(range) = change.range {
-                        let range = util::lsp_range_to_rope_range(range, &document.text).unwrap();
-                        document.text.remove(range.clone());
-                        document.text.insert(range.start, &change.text);
+                        let range = utils::lsp_range_to_rope_range(range, &document.rope).unwrap();
+                        document.rope.remove(range.clone());
+                        document.rope.insert(range.start, &change.text);
                     } else {
-                        document.text = Rope::from_str(&change.text)
+                        document.rope = Rope::from_str(&change.text)
                     }
                 }
+                // TODO: update ast
                 document
             });
         if let Some(document) = self.document_map.get(&params.text_document.uri) {
-            index::compute_diagnostics(params.text_document.uri, &document.text).await;
+            index::compute_diagnostics(params.text_document.uri, &document.rope).await;
         };
     }
 
+    // todo: read https://github.com/TenStrings/glicol-lsp/blob/77e97d9c687dc5d66871ad5ec91b6f049de2b8e8/src/main.rs#L76C2-L91C6
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         log::debug!("did save {}", params.text_document.uri);
         if let Some(text) = params.text {
             let rope = Rope::from_str(&text);
             self.document_map
-                .insert(params.text_document.uri.clone(), Document { text: rope });
+                .insert(params.text_document.uri.clone(), Document {
+                    rope: rope,
+                    tree: parse(&text),
+                });
         }
 
         index::index_update(&self.symbols_map, &params.text_document.uri);
         if let Some(document) = self.document_map.get(&params.text_document.uri) {
-            index::compute_diagnostics(params.text_document.uri, &document.text).await;
+            index::compute_diagnostics(params.text_document.uri, &document.rope).await;
         };
     }
 
@@ -125,7 +139,7 @@ impl LanguageServer for Backend {
         let position = params.text_document_position.position;
         // todo: proper error handling. make ropey, dashmap -> JSONRpc error
         let completions = || -> Option<Vec<CompletionItem>> {
-            let rope = &self.document_map.get(&uri)?.text;
+            let rope = &self.document_map.get(&uri)?.rope;
             let line = rope.get_line(position.line as usize)?;
             let mut query = String::new();
             for (i, char) in line.chars().enumerate() {
@@ -238,47 +252,4 @@ async fn main() {
 
     log::info!("starting language server ... listing for stdin");
     Server::new(stdin, stdout, socket).serve(service).await;
-}
-
-// UTILS
-
-#[allow(unused)]
-mod util {
-    use {
-        ropey::Rope,
-        tower_lsp::lsp_types::{Position, Range},
-    };
-
-    pub fn position_to_index(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
-        let line = position.line as usize;
-        let line = rope.try_line_to_char(line)?;
-        Ok(line + position.character as usize)
-    }
-
-    pub fn index_to_position(index: usize, rope: &Rope) -> Result<Position, ropey::Error> {
-        let line = rope.try_char_to_line(index)?;
-        let char = index - rope.line_to_char(line);
-        Ok(Position {
-            line: line as u32,
-            character: char as u32,
-        })
-    }
-
-    pub fn lsp_range_to_rope_range(
-        range: Range,
-        rope: &Rope,
-    ) -> Result<std::ops::Range<usize>, ropey::Error> {
-        let start = position_to_index(range.start, rope)?;
-        let end = position_to_index(range.end, rope)?;
-        Ok(start..end)
-    }
-
-    pub fn rope_range_to_lsp_range(
-        range: std::ops::Range<usize>,
-        rope: &Rope,
-    ) -> Result<Range, ropey::Error> {
-        let start = index_to_position(range.start, rope)?;
-        let end = index_to_position(range.end, rope)?;
-        Ok(Range { start, end })
-    }
 }

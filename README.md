@@ -99,6 +99,7 @@ For me this led to the issue that the language server wasn't spawned because I h
 * https://github.com/nix-community/vscode-nix-ide
 * https://github.com/wch/r-source/blob/trunk/src/main/gram.y
 * https://cran.r-project.org/doc/manuals/r-release/R-lang.html
+* https://github.com/TenStrings/glicol-lsp/blob/77e97d9c687dc5d66871ad5ec91b6f049de2b8e8/src/main.rs#L16
 
 ## License
 
