@@ -1,12 +1,9 @@
 use {
     dashmap::DashMap,
     ropey::Rope,
-    roughly::{
-        index::{self, parse},
-        utils,
-    },
+    roughly::index::{self},
     tower_lsp::{Client, LanguageServer, LspService, Server, jsonrpc::Result, lsp_types::*},
-    tree_sitter::Tree,
+    tree_sitter::{InputEdit, Point, Tree},
 };
 
 #[derive(Debug)]
@@ -80,7 +77,7 @@ impl LanguageServer for Backend {
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         log::debug!("did open {}", params.text_document.uri);
         let rope = Rope::from_str(&params.text_document.text);
-        let tree = index::parse(&params.text_document.text);
+        let tree = index::parse(&params.text_document.text, None);
         index::compute_diagnostics(params.text_document.uri.clone(), &rope).await;
 
         self.document_map
@@ -95,33 +92,65 @@ impl LanguageServer for Backend {
         self.document_map
             .alter(&params.text_document.uri, |_, mut document| {
                 for change in params.content_changes {
-                    if let Some(range) = change.range {
-                        let range = utils::lsp_range_to_rope_range(range, &document.rope).unwrap();
-                        document.rope.remove(range.clone());
-                        document.rope.insert(range.start, &change.text);
-                    } else {
-                        document.rope = Rope::from_str(&change.text)
-                    }
+                    let Some(range) = change.range else {
+                        log::warn!("unexpected case #2141 - check");
+                        continue;
+                    };
+
+                    let (rope, tree) = (&mut document.rope, &mut document.tree);
+
+                    let start = rope.line_to_char(range.start.line as usize)
+                        + range.start.character as usize;
+
+                    let end =
+                        rope.line_to_char(range.end.line as usize) + range.end.character as usize;
+
+                    let old_end_byte = rope.char_to_byte(end);
+                    let new_end_char = start + change.text.len();
+                    let new_end_byte = rope.char_to_byte(new_end_char);
+
+                    rope.remove(start..end);
+                    rope.insert(start, &change.text);
+
+                    let new_end_line = rope.char_to_line(start + change.text.len());
+
+                    tree.edit(&InputEdit {
+                        start_byte: rope.char_to_byte(start),
+                        old_end_byte,
+                        new_end_byte,
+                        start_position: Point {
+                            row: range.start.line as usize,
+                            column: range.start.character as usize,
+                        },
+                        old_end_position: Point {
+                            row: range.end.line as usize,
+                            column: range.end.character as usize,
+                        },
+                        new_end_position: Point {
+                            row: new_end_line,
+                            column: new_end_char - rope.line_to_char(new_end_line),
+                        },
+                    });
+
+                    document.tree =
+                        	// todo: use Parser::parse_with_options
+                            index::parse(&format!("{}", document.rope), Some(&document.tree));
                 }
-                // TODO: update ast
+
                 document
             });
+
         if let Some(document) = self.document_map.get(&params.text_document.uri) {
             index::compute_diagnostics(params.text_document.uri, &document.rope).await;
         };
     }
 
-    // todo: read https://github.com/TenStrings/glicol-lsp/blob/77e97d9c687dc5d66871ad5ec91b6f049de2b8e8/src/main.rs#L76C2-L91C6
+    async fn did_close(&self, params: DidCloseTextDocumentParams) {
+        self.document_map.remove(&params.text_document.uri);
+    }
+
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         log::debug!("did save {}", params.text_document.uri);
-        if let Some(text) = params.text {
-            let rope = Rope::from_str(&text);
-            self.document_map
-                .insert(params.text_document.uri.clone(), Document {
-                    rope: rope,
-                    tree: parse(&text),
-                });
-        }
 
         index::index_update(&self.symbols_map, &params.text_document.uri);
         if let Some(document) = self.document_map.get(&params.text_document.uri) {
@@ -154,7 +183,34 @@ impl LanguageServer for Backend {
             }
             log::debug!("completion query: {query}");
 
-            let symbols = index::get_workspace_symbols(&query, &self.symbols_map, 1000);
+            let workspace_symbols =
+                index::get_workspace_symbols(&query, &self.symbols_map, 1000, Some(&uri));
+
+            // optimization would be to get all symbols for enclosing function
+            let document_symbols = if let Some(document) = self.document_map.get(&uri) {
+                let point = Point {
+                    row: position.line as usize,
+                    column: position.character as usize,
+                };
+                document
+                    .tree
+                    .root_node()
+                    .descendant_for_point_range(point, point)
+                    .and_then(|node| {
+                        let mut candidate = None;
+                        while let Some(node) = node.parent() {
+                            if node.kind() == "function_definition" {
+                                candidate = Some(node);
+                            }
+                        }
+                        candidate.and_then(|function| function.child(2))
+                    })
+                    .map(|node| index::symbols_for_block(&node, &document.rope))
+                    .unwrap_or_default()
+            } else {
+                log::error!("failed to aquirce document :/");
+                vec![]
+            };
 
             const RESERVED_WORDS: &[&str] = &[
                 "if",
@@ -186,7 +242,22 @@ impl LanguageServer for Backend {
                         kind: Some(CompletionItemKind::KEYWORD),
                         ..Default::default()
                     })
-                    .chain(symbols.into_iter().map(|symbol| CompletionItem {
+                    // todo: do proper traversing
+                    .chain(document_symbols.iter().fold(vec![], |mut symbols, symbol| {
+                        symbols.push(CompletionItem {
+                            label: symbol.name.clone(),
+                            kind: Some(match symbol.kind {
+                                SymbolKind::FUNCTION => CompletionItemKind::FUNCTION,
+                                SymbolKind::CLASS => CompletionItemKind::CLASS,
+                                SymbolKind::METHOD => CompletionItemKind::METHOD,
+                                _ => CompletionItemKind::VARIABLE,
+                            }),
+                            detail: None,
+                            ..Default::default()
+                        });
+                        symbols
+                    }))
+                    .chain(workspace_symbols.into_iter().map(|symbol| CompletionItem {
                         label: symbol.name,
                         kind: Some(match symbol.kind {
                             SymbolKind::FUNCTION => CompletionItemKind::FUNCTION,
@@ -212,9 +283,13 @@ impl LanguageServer for Backend {
         &self,
         params: DocumentSymbolParams,
     ) -> Result<Option<DocumentSymbolResponse>> {
-        Ok(Some(DocumentSymbolResponse::Flat(
-            index::get_document_symbols(&params.text_document.uri, &self.symbols_map),
-        )))
+        Ok(Some(DocumentSymbolResponse::Nested({
+            let Some(document) = self.document_map.get(&params.text_document.uri) else {
+                log::error!("failed to aquirce document :/");
+                return Ok(None);
+            };
+            index::get_document_symbols(&document.tree, &document.rope)
+        })))
     }
 
     async fn symbol(
@@ -225,6 +300,7 @@ impl LanguageServer for Backend {
             &params.query,
             &self.symbols_map,
             32,
+            None,
         )))
     }
 

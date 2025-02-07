@@ -20,29 +20,21 @@ pub fn get_workspace_symbols(
     query: &str,
     symbols_map: &DashMap<Url, Vec<DocumentSymbol>>,
     limit: usize,
+    maybe_ignore_uri: Option<&Url>,
 ) -> Vec<SymbolInformation> {
     let workspace_symbols: Vec<_> = symbols_map
         .iter()
         .flat_map(|ref_multi| {
             let (url, symbols) = ref_multi.pair();
-            filter_symbols(query, url, symbols)
+            match maybe_ignore_uri {
+                Some(ignore_uri) if ignore_uri == url => vec![],
+                _ => filter_symbols(query, url, symbols),
+            }
         })
         .take(limit) // limit amount
         .collect();
     log::info!("get workspace symbols {}", workspace_symbols.len());
     workspace_symbols
-}
-
-pub fn get_document_symbols(
-    url: &Url,
-    symbols_map: &DashMap<Url, Vec<DocumentSymbol>>,
-) -> Vec<SymbolInformation> {
-    let Some(symbols) = symbols_map.get(url) else {
-        log::info!("failed to acquire symbols map");
-        // todo: understand when this happens
-        return vec![];
-    };
-    filter_symbols("", url, &symbols)
 }
 
 fn filter_symbols(query: &str, url: &Url, symbols: &[DocumentSymbol]) -> Vec<SymbolInformation> {
@@ -237,92 +229,65 @@ pub async fn compute_diagnostics(uri: Url, _: &Rope) {
 }
 
 // LOCAL SYMBOLS
-pub fn parse_file(rope: &Rope, tree: &Tree) -> Vec<DocumentSymbol> {
+pub fn get_document_symbols(tree: &Tree, rope: &Rope) -> Vec<DocumentSymbol> {
+    log::info!("parse symbols tree");
     let root = tree.root_node();
-    let mut cursor = root.walk();
 
-    cursor.goto_first_child();
-    let mut symbols = vec![];
-    for node in root.children(&mut cursor) {
-        dbg!(node.kind());
-        match node.kind() {
-            "binary_operator" => {
-                let lhs = node.child(0).unwrap();
-                let op = node.child(1).unwrap();
-                let rhs = node.child(2).unwrap();
-                // todo: fix this
-                let range = Range::new(Position::new(0, 5), Position::new(0, 5));
-                if lhs.kind() == "identifier" && op.kind() == "<-" {
-                    symbols.push(
-                        #[allow(deprecated)]
-                        DocumentSymbol {
-                            name: rope
-                                .byte_slice(lhs.start_byte()..lhs.end_byte())
-                                .to_string(),
-                            kind: match rhs.kind() {
-                                "function_definition" => SymbolKind::FUNCTION,
-                                _ => SymbolKind::VARIABLE,
-                            },
-                            detail: None,
-                            tags: None,
-                            range: utils::rope_range_to_lsp_range(
-                                lhs.start_byte()..lhs.end_byte(),
-                                rope,
-                            )
-                            .unwrap(),
-                            selection_range: range,
-                            children: match rhs.kind() {
-                                "function_definition" => Some(parse_function(rope, &rhs)),
-                                _ => None,
-                            },
-                            deprecated: None,
-                        },
-                    )
-                }
-            }
-            "ERROR" => {
-                // TODO: add to diagostics
-                dbg!("here is an error!");
-                dbg!(node.child(0));
-                dbg!(node.child(1));
-                dbg!(node.child(2));
-            }
-            _ => {}
-        }
-    }
-
-    symbols
+    symbols_for_block(&root, rope)
 }
 
-pub fn parse_function(rope: &Rope, function: &Node) -> Vec<DocumentSymbol> {
-    let mut cursor = function.walk();
+pub fn symbols_for_block(root: &Node, rope: &Rope) -> Vec<DocumentSymbol> {
+    let mut cursor = root.walk();
     let mut symbols = vec![];
 
-    for node in function.children(&mut cursor) {
+    for node in root.children(&mut cursor) {
         match node.kind() {
             "binary_operator" => {
                 let lhs = node.child(0).unwrap();
                 let op = node.child(1).unwrap();
                 let rhs = node.child(2).unwrap();
-                dbg!("lhs", lhs.kind(), "rhs", rhs.kind());
                 // todo: fix this
-                let range = Range::new(Position::new(0, 5), Position::new(0, 5));
                 if lhs.kind() == "identifier" && op.kind() == "<-" {
+                    let (kind, detail, children) = match rhs.kind() {
+                        "function_definition" => {
+                            let (children, detail) = parse_function(&rhs, rope);
+                            (SymbolKind::FUNCTION, detail, Some(children))
+                        }
+                        "program" | "braced_expression" => {
+                            let block_symbols = symbols_for_block(&rhs, rope);
+                            let kind = block_symbols
+                                .last()
+                                .map(|symbol| symbol.kind)
+                                .unwrap_or(SymbolKind::NULL);
+                            symbols.extend(block_symbols);
+
+                            (
+                                kind,
+                                // note: kind of braced expression is last expression
+                                None, None,
+                            )
+                        }
+                        "integer" | "float" | "complex" => (SymbolKind::NUMBER, None, None),
+                        "true" | "false" => (SymbolKind::BOOLEAN, None, None),
+                        "string" => (SymbolKind::STRING, None, None),
+                        "null" => (SymbolKind::NULL, None, None),
+                        _ => (SymbolKind::VARIABLE, None, None),
+                    };
+                    let range =
+                        utils::rope_range_to_lsp_range(lhs.start_byte()..lhs.end_byte(), rope)
+                            .unwrap();
                     symbols.push(
                         #[allow(deprecated)]
                         DocumentSymbol {
                             name: rope
                                 .byte_slice(lhs.start_byte()..lhs.end_byte())
                                 .to_string(),
-                            kind: match rhs.kind() {
-                                "function_definition" => SymbolKind::FUNCTION,
-                                _ => SymbolKind::VARIABLE,
-                            },
-                            detail: None,
+                            kind,
+                            detail,
                             tags: None,
                             range,
                             selection_range: range,
-                            children: None, // todo: this should be recursicely ..
+                            children,
                             deprecated: None,
                         },
                     )
@@ -334,54 +299,66 @@ pub fn parse_function(rope: &Rope, function: &Node) -> Vec<DocumentSymbol> {
     symbols
 }
 
+pub fn parse_function(function: &Node, rope: &Rope) -> (Vec<DocumentSymbol>, Option<String>) {
+    let (parameters, body) = (function.child(1).unwrap(), function.child(2).unwrap());
+    let symbols = symbols_for_block(&body, rope);
+    let mut cursor = parameters.walk();
+    let detail = parameters
+        .children_by_field_name("parameter", &mut cursor)
+        .map(|parameter| match parameter.child(0) {
+            Some(name) => rope
+                .byte_slice(name.start_byte()..name.end_byte())
+                .to_string(),
+            None => "UNKNOWN".into(),
+        })
+        .collect::<Vec<String>>()
+        .join(", ");
+    (symbols, Some(detail))
+}
+
 // todo: consider resusing global parser (maybe behind Mutex??)
-pub fn parse(text: &str) -> Tree {
+pub fn parse(text: &str, maybe_tree: Option<&Tree>) -> Tree {
     let mut parser = tree_sitter::Parser::new();
     let language = tree_sitter_r::LANGUAGE;
     parser
         .set_language(&language.into())
         .expect("Error loading R parser");
-    let tree = parser.parse(text, None).unwrap();
+    let tree = parser.parse(text, maybe_tree).unwrap();
     tree
-}
-
-pub fn parse_tree() -> Vec<DocumentSymbol> {
-    todo!()
 }
 
 #[cfg(test)]
 mod test {
     use {
-        super::{index, parse, parse_file},
+        super::{get_document_symbols, index, parse},
         indoc::indoc,
         ropey::Rope,
-        tower_lsp::lsp_types::{DocumentSymbol, SymbolKind},
+        tower_lsp::lsp_types::SymbolKind,
     };
 
     #[test]
     fn test_parse() {
         let text = indoc! {r#"
-            x(x) <- asdf
-            foo <- function() {
-                a <- 1
-                b <- 2
+            foo <- function(a, b = True) {
+                a <- TRUE
+                b <- FALSE
             }
-            bar <- \(x) {
+            bar <- \(x, y, z) {
                 a <- 1
-                b <- 2
+                b <- "foo"
             }
-            baz <- 3
+            baz <- { "foo"; 3.14 }
         "#};
-        let symbols = parse_file(&Rope::from_str(text), &parse(text));
+        let symbols = get_document_symbols(&parse(text, None), &Rope::from_str(text));
 
         assert_eq!(symbols[0].name, "foo");
         assert_eq!(symbols[0].kind, SymbolKind::FUNCTION);
         {
             let children = symbols[0].children.as_ref().unwrap();
             assert_eq!(children[0].name, "a");
-            assert_eq!(children[0].kind, SymbolKind::VARIABLE);
+            assert_eq!(children[0].kind, SymbolKind::BOOLEAN);
             assert_eq!(children[1].name, "b");
-            assert_eq!(children[1].kind, SymbolKind::VARIABLE);
+            assert_eq!(children[1].kind, SymbolKind::BOOLEAN);
         }
 
         assert_eq!(symbols[1].name, "bar");
@@ -389,13 +366,13 @@ mod test {
         {
             let children = symbols[1].children.as_ref().unwrap();
             assert_eq!(children[0].name, "a");
-            assert_eq!(children[0].kind, SymbolKind::VARIABLE);
+            assert_eq!(children[0].kind, SymbolKind::NUMBER);
             assert_eq!(children[1].name, "b");
-            assert_eq!(children[1].kind, SymbolKind::VARIABLE);
+            assert_eq!(children[1].kind, SymbolKind::STRING);
         }
 
         assert_eq!(symbols[2].name, "baz");
-        assert_eq!(symbols[2].kind, SymbolKind::VARIABLE);
+        assert_eq!(symbols[2].kind, SymbolKind::NUMBER);
     }
 
     #[test]
