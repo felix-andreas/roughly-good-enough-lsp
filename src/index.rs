@@ -37,6 +37,18 @@ pub fn get_workspace_symbols(
     workspace_symbols
 }
 
+pub fn get_document_symbols(
+    url: &Url,
+    symbols_map: &DashMap<Url, Vec<DocumentSymbol>>,
+) -> Vec<SymbolInformation> {
+    let Some(symbols) = symbols_map.get(url) else {
+        log::info!("failed to acquire symbols map");
+        // todo: understand when this happens
+        return vec![];
+    };
+    filter_symbols("", url, &symbols)
+}
+
 fn filter_symbols(query: &str, url: &Url, symbols: &[DocumentSymbol]) -> Vec<SymbolInformation> {
     symbols
         .iter()
@@ -229,7 +241,7 @@ pub async fn compute_diagnostics(uri: Url, _: &Rope) {
 }
 
 // LOCAL SYMBOLS
-pub fn get_document_symbols(tree: &Tree, rope: &Rope) -> Vec<DocumentSymbol> {
+pub fn get_document_symbols_ng(tree: &Tree, rope: &Rope) -> Vec<DocumentSymbol> {
     log::info!("parse symbols tree");
     let root = tree.root_node();
 
@@ -330,7 +342,7 @@ pub fn parse(text: &str, maybe_tree: Option<&Tree>) -> Tree {
 #[cfg(test)]
 mod test {
     use {
-        super::{get_document_symbols, index, parse},
+        super::{get_document_symbols_ng, index, parse},
         indoc::indoc,
         ropey::Rope,
         tower_lsp::lsp_types::SymbolKind,
@@ -349,7 +361,7 @@ mod test {
             }
             baz <- { "foo"; 3.14 }
         "#};
-        let symbols = get_document_symbols(&parse(text, None), &Rope::from_str(text));
+        let symbols = get_document_symbols_ng(&parse(text, None), &Rope::from_str(text));
 
         assert_eq!(symbols[0].name, "foo");
         assert_eq!(symbols[0].kind, SymbolKind::FUNCTION);

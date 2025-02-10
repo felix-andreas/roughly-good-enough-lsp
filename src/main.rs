@@ -179,34 +179,36 @@ impl LanguageServer for Backend {
             }
             log::debug!("completion query: {query}");
 
+            // TODO: consider passing Some(&uri) to avoid showing local symbols twice ...
             let workspace_symbols =
-                index::get_workspace_symbols(&query, &self.symbols_map, 1000, Some(&uri));
+                index::get_workspace_symbols(&query, &self.symbols_map, 1000, None);
 
             // optimization would be to get all symbols for enclosing function
-            let document_symbols = if let Some(document) = self.document_map.get(&uri) {
-                let point = Point {
-                    row: position.line as usize,
-                    column: position.character as usize,
-                };
-                document
-                    .tree
-                    .root_node()
-                    .descendant_for_point_range(point, point)
-                    .and_then(|node| {
-                        let mut candidate = None;
-                        while let Some(node) = node.parent() {
-                            if node.kind() == "function_definition" {
-                                candidate = Some(node);
-                            }
-                        }
-                        candidate.and_then(|function| function.child(2))
-                    })
-                    .map(|node| index::symbols_for_block(&node, &document.rope))
-                    .unwrap_or_default()
-            } else {
-                log::error!("failed to aquirce document :/");
-                vec![]
-            };
+            // TODO: write code to get local completion items
+            // let document_symbols = if let Some(document) = self.document_map.get(&uri) {
+            //     let point = Point {
+            //         row: position.line as usize,
+            //         column: position.character as usize,
+            //     };
+            //     document
+            //         .tree
+            //         .root_node()
+            //         .descendant_for_point_range(point, point)
+            //         .and_then(|node| {
+            //             let mut candidate = None;
+            //             while let Some(node) = node.parent() {
+            //                 if node.kind() == "function_definition" {
+            //                     candidate = Some(node);
+            //                 }
+            //             }
+            //             candidate.and_then(|function| function.child(2))
+            //         })
+            //         .map(|node| index::symbols_for_block(&node, &document.rope))
+            //         .unwrap_or_default()
+            // } else {
+            //     log::error!("failed to aquirce document :/");
+            //     vec![]
+            // };
 
             const RESERVED_WORDS: &[&str] = &[
                 "if",
@@ -239,20 +241,20 @@ impl LanguageServer for Backend {
                         ..Default::default()
                     })
                     // todo: do proper traversing
-                    .chain(document_symbols.iter().fold(vec![], |mut symbols, symbol| {
-                        symbols.push(CompletionItem {
-                            label: symbol.name.clone(),
-                            kind: Some(match symbol.kind {
-                                SymbolKind::FUNCTION => CompletionItemKind::FUNCTION,
-                                SymbolKind::CLASS => CompletionItemKind::CLASS,
-                                SymbolKind::METHOD => CompletionItemKind::METHOD,
-                                _ => CompletionItemKind::VARIABLE,
-                            }),
-                            detail: None,
-                            ..Default::default()
-                        });
-                        symbols
-                    }))
+                    // .chain(document_symbols.iter().fold(vec![], |mut symbols, symbol| {
+                    //     symbols.push(CompletionItem {
+                    //         label: symbol.name.clone(),
+                    //         kind: Some(match symbol.kind {
+                    //             SymbolKind::FUNCTION => CompletionItemKind::FUNCTION,
+                    //             SymbolKind::CLASS => CompletionItemKind::CLASS,
+                    //             SymbolKind::METHOD => CompletionItemKind::METHOD,
+                    //             _ => CompletionItemKind::VARIABLE,
+                    //         }),
+                    //         detail: None,
+                    //         ..Default::default()
+                    //     });
+                    //     symbols
+                    // }))
                     .chain(workspace_symbols.into_iter().map(|symbol| CompletionItem {
                         label: symbol.name,
                         kind: Some(match symbol.kind {
@@ -279,13 +281,16 @@ impl LanguageServer for Backend {
         &self,
         params: DocumentSymbolParams,
     ) -> Result<Option<DocumentSymbolResponse>> {
-        Ok(Some(DocumentSymbolResponse::Nested({
-            let Some(document) = self.document_map.get(&params.text_document.uri) else {
-                log::error!("failed to aquirce document :/");
-                return Ok(None);
-            };
-            index::get_document_symbols(&document.tree, &document.rope)
-        })))
+        Ok(Some(DocumentSymbolResponse::Flat(
+            index::get_document_symbols(&params.text_document.uri, &self.symbols_map),
+        )))
+        // Ok(Some(DocumentSymbolResponse::Nested({
+        //     let Some(document) = self.document_map.get(&params.text_document.uri) else {
+        //         log::error!("failed to aquirce document :/");
+        //         return Ok(None);
+        //     };
+        //     index::get_document_symbols_ng(&document.tree, &document.rope)
+        // })))
     }
 
     async fn symbol(
