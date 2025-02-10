@@ -1,0 +1,5 @@
+---
+source: src/format.rs
+expression: "fmt(indoc! { r#\"\n            list  (a = 1, b= 2L ,c =3i  )\n        \"# })"
+---
+list(a = 1, b = 2L, c = 3i)
