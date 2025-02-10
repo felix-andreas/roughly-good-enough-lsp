@@ -73,7 +73,6 @@ impl LanguageServer for Backend {
     // TEXT SYNC
     //
 
-    // todo: read https://github.com/TenStrings/glicol-lsp/blob/77e97d9c687dc5d66871ad5ec91b6f049de2b8e8/src/main.rs#L76C2-L91C6
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         log::debug!("did open {}", params.text_document.uri);
         let rope = Rope::from_str(&params.text_document.text);
@@ -81,10 +80,7 @@ impl LanguageServer for Backend {
         index::compute_diagnostics(params.text_document.uri.clone(), &rope).await;
 
         self.document_map
-            .insert(params.text_document.uri.clone(), Document {
-                rope: rope,
-                tree,
-            });
+            .insert(params.text_document.uri, Document { rope, tree });
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
