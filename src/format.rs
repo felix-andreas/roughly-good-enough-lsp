@@ -393,9 +393,9 @@ mod test {
         insta::assert_snapshot!(fmt(indoc! {r#"
             ( foo+ bar )@baz
         "#}));
-        // insta::assert_snapshot!(fmt(indoc! {r#"
-        //     list(foo = 1, bar =
-        //     2)@baz
-        // "#}));
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            list(foo = 1, bar =
+            2)@baz
+        "#}));
     }
 }
