@@ -2,7 +2,8 @@
 use {
     crate::utils,
     ropey::Rope,
-    tree_sitter::{Node, Tree},
+    thiserror::Error,
+    tree_sitter::{Node, Tree, TreeCursor},
 };
 
 fn format(tree: &Tree, rope: &Rope) -> Option<String> {
@@ -149,100 +150,185 @@ fn format(tree: &Tree, rope: &Rope) -> Option<String> {
     }
 }
 
-fn format_recursive(node: &Node, rope: &Rope) -> Option<String> {
+#[derive(Error, Debug)]
+pub enum FormatError {
+    #[error("The node of type {kind} has missing children {raw}")]
+    Missing { kind: &'static str, raw: String },
+    #[error("The node has unknown type {kind}: {raw}")]
+    Unknown { kind: &'static str, raw: String },
+    #[error("Missing filed {field} for node of kind {kind}")]
+    MissingField {
+        kind: &'static str,
+        field: &'static str,
+    },
+}
+
+fn format_recursive(node: Node, rope: &Rope) -> Result<String, FormatError> {
+    if node.is_missing() {
+        let parent = node.parent().unwrap();
+        return Err(FormatError::Missing {
+            kind: parent.kind(),
+            raw: rope.byte_slice(parent.byte_range()).to_string(),
+        });
+    }
+
+    let kind = node.kind();
     if !node.is_named() {
-        return Some(node.kind().into());
+        return Ok(kind.into());
     }
 
     let get_raw = || rope.byte_slice(node.byte_range()).to_string();
+    let field = |field: &'static str| {
+        node.child_by_field_name(field)
+            .ok_or_else(|| FormatError::MissingField { kind: kind, field })
+    };
+    let field_optional = |field: &'static str| node.child_by_field_name(field);
+    fn fields(
+        field: &'static str,
+        cursor: &mut TreeCursor,
+        f: impl Fn(Node) -> Result<String, FormatError>,
+    ) -> Result<Vec<String>, FormatError> {
+        cursor
+            .node()
+            .children_by_field_name(field, cursor)
+            .map(f)
+            .collect::<Result<Vec<String>, FormatError>>()
+    };
+    let fmt = |node: Node| format_recursive(node, rope);
 
-    Some(match node.kind() {
+    // DEBUG
+    // dbg!(node.child(0));
+    // dbg!(node.child(1));
+    // dbg!(node.child(2));
+    // dbg!(node.child(3));
+
+    Ok(match kind {
         "argument" => {
-            // dbg!(node.child(0));
-            // dbg!(node.child(1));
-            // dbg!(node.child(2));
-            // dbg!(node.child(3));
-            let name = node.child(0)?;
-            let maybe_value = node.child(2);
-
-            let name = format_recursive(&name, rope)?;
-            match maybe_value {
-                Some(value) => format!("{name} = {}", format_recursive(&value, rope)?),
-                None => name,
+            let maybe_name = field_optional("name");
+            let maybe_value = field_optional("value");
+            match (maybe_name, maybe_value) {
+                (Some(name), Some(value)) => format!("{name} = {value}"),
+                (None, Some(value)) => format!("{value}"),
+                (Some(name), None) => format!("{name}"),
+                (None, None) => format!(""),
             }
         }
         "arguments" => {
             let mut cursor = node.walk();
-            node.children_by_field_name("argument", &mut cursor)
-                .map(|argument| format_recursive(&argument, rope).unwrap())
-                .collect::<Vec<String>>()
-                .join(", ")
+            let mut multiline = None;
+            let open = field("open")?;
+            let close = field("close")?;
+            let arguments = node
+                .children_by_field_name("argument", &mut cursor)
+                .map(|argument| {
+                    let (start, end) = (argument.start_position().row, argument.end_position().row);
+                    multiline = Some(multiline.map_or((start, end), |(s, e)| {
+                        (usize::min(s, start), usize::max(e, end))
+                    }));
+                    format_recursive(argument, rope).unwrap()
+                })
+                .collect::<Vec<String>>();
+            let seperator = if open.start_position().row == close.end_position().row {
+                ", "
+            } else {
+                ",\n"
+            };
+            arguments.join(seperator)
+            // match multiline {
+            //     None => "".into(),
+            //     Some((start, end)) if start == end => arguments.join(", "),
+            //     _ => arguments.join(",\n"),
+            // }
         }
         "binary_operator" => {
-            let lhs = node.child(0)?;
-            let op = node.child(1)?;
-            let rhs = node.child(2)?;
             format!(
                 "{} {} {}",
-                format_recursive(&lhs, rope)?,
-                op.kind(),
-                format_recursive(&rhs, rope)?
+                fmt(field("lhs")?)?,
+                field("operator")?.kind(),
+                fmt(field("rhs")?)?
             )
         }
         "braced_expression" => {
-            let open = node.child(0)?;
-            let body = node.child(1)?;
-            let close = node.child(2)?;
+            let mut cursor = node.walk();
+            let open = node.child_by_field_name("open").unwrap();
+            let close = node.child_by_field_name("close").unwrap();
+            let lines = fields("body", &mut cursor, fmt)?;
 
-            let body_fmt = format_recursive(&body, rope)?;
             // we only indent if { and } are not on the same line
             if open.start_position().row == close.end_position().row {
-                format!("{{ {body_fmt} }}",)
+                if lines.is_empty() {
+                    format!("{{}}")
+                } else {
+                    format!("{{ {} }}", lines.join("; "))
+                }
             } else {
-                format!("{{\n{}\n}}", utils::indent_by(2, body_fmt))
+                format!("{{\n{}\n}}", utils::indent_by(2, lines.join("\n")))
             }
         }
         "call" => {
-            let function = node.child(0)?;
-            let arguments = node.child(1)?;
+            let function = field("function")?;
+            let arguments = field("arguments")?;
 
-            let function_fmt = format_recursive(&function, rope)?;
-            let arguments_fmt = format_recursive(&arguments, rope)?;
+            let function_fmt = fmt(function)?;
+            let arguments_fmt = fmt(arguments)?;
             if arguments.start_position().row == arguments.end_position().row {
                 format!("{function_fmt}({arguments_fmt})",)
             } else {
                 format!("{function_fmt}(\n{}\n)", utils::indent_by(2, arguments_fmt))
             }
         }
-        "complex" => todo!(),
-        "extract_operator" => todo!(),
+        "complex" => get_raw(),
+        "extract_operator" => {
+            let lhs = field("lhs")?;
+            let op = field("operator")?;
+            let maybe_rhs = field_optional("rhs");
+            format!("{}{}{}", fmt(lhs)?, op.kind(), match maybe_rhs {
+                Some(rhs) => fmt(rhs)?,
+                None => "".into(),
+            })
+        }
         "float" => get_raw(),
-        "for_statement" => todo!(),
-        "function_definition" => {
-            let name = node.child(0)?;
-            let parameters = node.child(1)?;
-            let body = node.child(2)?;
+        "for_statement" => {
             format!(
-                "{}({}) {}",
-                format_recursive(&name, rope)?,
-                format_recursive(&parameters, rope)?,
-                format_recursive(&body, rope)?
+                "for {} in {} {}",
+                fmt(field("variable")?)?,
+                fmt(field("sequence")?)?,
+                fmt(field("body")?)?
             )
         }
-        "if_statement" => {
-            let condition = node.child(2)?;
-            let consequence = node.child(4)?;
-            let alternative = node.child(6);
+        "function_definition" => {
+            let name = field("name")?;
+            let parameters = field("parameters")?;
+            let body = field("body")?;
 
-            let condition = format_recursive(&condition, rope)?;
-            let consequence = format_recursive(&consequence, rope)?;
-            match alternative {
-                Some(default) => {
+            let name_fmt = fmt(name)?;
+            let body_fmt = fmt(body)?;
+            let parameters_fmt = fmt(parameters)?;
+            if parameters.start_position().row == parameters.end_position().row {
+                format!("{}({}) {}", name_fmt, parameters_fmt, body_fmt)
+            } else {
+                format!(
+                    "{}(\n{}\n) {}",
+                    name_fmt,
+                    utils::indent_by(2, parameters_fmt),
+                    body_fmt
+                )
+            }
+        }
+        "if_statement" => {
+            let condition = field("condition")?;
+            let consequence = field("consequence")?;
+            let maybe_alternative = field_optional("alternative");
+
+            let condition = fmt(condition)?;
+            let consequence = fmt(consequence)?;
+            match maybe_alternative {
+                Some(alternative) => {
                     format!(
                         "if {} {} else {}",
                         condition,
                         consequence,
-                        format_recursive(&default, rope)?
+                        fmt(alternative)?
                     )
                 }
                 None => {
@@ -250,32 +336,54 @@ fn format_recursive(node: &Node, rope: &Rope) -> Option<String> {
                 }
             }
         }
-        "integer" => todo!(),
+        "integer" => get_raw(),
         "na" => "NA".into(),
-        "namespace_operator" => todo!(),
+        "namespace_operator" => {
+            let lhs = field("lhs")?;
+            let op = field("operator")?;
+            let maybe_rhs = field_optional("rhs");
+            format!("{}{}{}", fmt(lhs)?, op.kind(), match maybe_rhs {
+                Some(rhs) => fmt(rhs)?,
+                None => "".into(),
+            })
+        }
         "parameter" => {
-            let name = node.child(0)?;
-            let maybe_default = node.child(2);
+            let name = field("name")?;
+            let maybe_default = field_optional("default");
 
-            let name = format_recursive(&name, rope)?;
+            let name = fmt(name)?;
             match maybe_default {
-                Some(default) => format!("{name} = {}", format_recursive(&default, rope)?),
+                Some(default) => format!("{name} = {}", fmt(default)?),
                 None => name,
             }
         }
         "parameters" => {
             let mut cursor = node.walk();
-            node.children_by_field_name("parameter", &mut cursor)
-                .map(|parameter| format_recursive(&parameter, rope).unwrap())
-                .collect::<Vec<String>>()
-                .join(", ")
+
+            let mut multiline = None;
+            let parameters = node
+                .children_by_field_name("parameter", &mut cursor)
+                .map(|parameter| {
+                    let (start, end) =
+                        (parameter.start_position().row, parameter.end_position().row);
+                    multiline = Some(multiline.map_or((start, end), |(s, e)| {
+                        (usize::min(s, start), usize::max(e, end))
+                    }));
+                    fmt(parameter).unwrap()
+                })
+                .collect::<Vec<String>>();
+            match multiline {
+                None => "".into(),
+                Some((start, end)) if start == end => parameters.join(", "),
+                _ => parameters.join(",\n"),
+            }
         }
         "parenthesized_expression" => {
-            let open = node.child(0)?;
-            let body = node.child(1)?;
-            let close = node.child(2)?;
+            let open = field("open")?;
+            let body = field("body")?;
+            let close = field("close")?;
 
-            let body_fmt = format_recursive(&body, rope)?;
+            let body_fmt = fmt(body)?;
             // we only indent if { and } are not on the same line
             if open.start_position().row == close.end_position().row {
                 format!("({body_fmt})",)
@@ -283,14 +391,63 @@ fn format_recursive(node: &Node, rope: &Rope) -> Option<String> {
                 format!("(\n{}\n)", utils::indent_by(2, body_fmt))
             }
         }
-        "program" => format_recursive(&node.child(0)?, rope)?,
-        "repeat_statement" => todo!(),
-        "string" => todo!(),
-        "string_content" => todo!(),
-        "subset" => todo!(),
-        "subset2" => todo!(),
-        "unary_operator" => todo!(),
-        "while_statement" => todo!(),
+        "program" => {
+            let mut cursor = node.walk();
+            node.children(&mut cursor)
+                .map(fmt)
+                .collect::<Result<Vec<String>, FormatError>>()?
+                .join(if node.start_position().row == node.end_position().row {
+                    "; "
+                } else {
+                    "\n"
+                })
+        }
+        "repeat_statement" => {
+            format!("repeat {}", fmt(field("body")?)?)
+        }
+        "string" => {
+            let maybe_string_content = field_optional("content");
+            match maybe_string_content {
+                Some(string_content) => format!("\"{}\"", fmt(string_content)?),
+                None => format!("\"\""),
+            }
+        }
+        "string_content" => get_raw(),
+        "subset" => {
+            let function = field("function")?;
+            let arguments = field("arguments")?;
+
+            let function_fmt = fmt(function)?;
+            let arguments_fmt = fmt(arguments)?;
+            if arguments.start_position().row == arguments.end_position().row {
+                format!("{function_fmt}[{arguments_fmt}]",)
+            } else {
+                format!("{function_fmt}[\n{}\n]", utils::indent_by(2, arguments_fmt))
+            }
+        }
+        "subset2" => {
+            let function = field("function")?;
+            let arguments = field("arguments")?;
+
+            let function_fmt = fmt(function)?;
+            let arguments_fmt = fmt(arguments)?;
+            if arguments.start_position().row == arguments.end_position().row {
+                format!("{function_fmt}[[{arguments_fmt}]]",)
+            } else {
+                format!(
+                    "{function_fmt}[[\n{}\n]]",
+                    utils::indent_by(2, arguments_fmt)
+                )
+            }
+        }
+        "unary_operator" => format!("{}{}", fmt(field("operator")?)?, fmt(field("rhs")?)?),
+        "while_statement" => {
+            format!(
+                "while ({}) {}",
+                fmt(field("condition")?)?,
+                fmt(field("body")?)?
+            )
+        }
         // SIMPLE
         "break" => "break".into(),
         "comma" => ",".into(),
@@ -308,7 +465,10 @@ fn format_recursive(node: &Node, rope: &Rope) -> Option<String> {
         "true" => "TRUE".into(),
         unknown => {
             log::error!("UNKNOWN NODE KIND: {unknown}");
-            return None;
+            return Err(FormatError::Unknown {
+                kind,
+                raw: get_raw(),
+            });
         }
     })
 }
@@ -324,31 +484,96 @@ fn format_recursive(node: &Node, rope: &Rope) -> Option<String> {
 #[cfg(test)]
 mod test {
     use {super::*, crate::index, indoc::indoc};
+    // TODO: TEST COMMENTS
 
-    #[test]
-    fn test_format() {
-        // let text = indoc! {r#"
-        // 	foo <- function(..., a =4, c) {
-        // 		if (true) {
-        // 			a <- 1
-        // 		} else {
-        // 			b <- 2
-        // 		}
-        // 	}
-        // "#};
-        let text = indoc! {r#"
-            (\(x) 2 * x)(a, 2 + 4)
-		"#};
+    fn fmt(text: &str) -> String {
         let tree = index::parse(text, None);
 
-        println!(
-            "{:#?}",
-            index::parse("((1 + 2) + 3)", None).root_node().to_sexp()
-        );
-        println!("{:#?}", tree.root_node().to_sexp());
-        println!(
-            "{}",
-            format_recursive(&tree.root_node(), &Rope::from_str(text)).unwrap()
-        );
+        // DEBUG
+        dbg!(tree.root_node().to_sexp());
+        format_recursive(tree.root_node(), &Rope::from_str(text)).unwrap()
+    }
+
+    #[test]
+    fn test_binary_operator() {
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            4 + 2
+        "#}));
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            4 + 2*3
+        "#}));
+        // assignments
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            x<-1
+        "#}));
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            x<-1;y<-2
+        "#}));
+    }
+
+    #[test]
+    fn test_braced_expression() {
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            {}
+        "#}));
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            { 1L;2}
+        "#}));
+        // assignments
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            {
+                foo
+                bar
+            }
+        "#}));
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            {foo;
+                bar}
+        "#}));
+    }
+
+    #[test]
+    fn test_call() {
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            list  (a = 1, b= 2)
+        "#}));
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            list  (a = 1,
+             b= 2)
+        "#}));
+    }
+
+    #[test]
+    fn test_function_definition() {
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            function(a, b= "foo") {}
+        "#}));
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            function( a
+            , b=  "foo") {}
+        "#}));
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            (\(a, b) a *  b)(2, 3)
+        "#}));
+        // TODO: make this work
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            function(
+                a , b=  "foo") {}
+        "#}));
+    }
+
+    #[test]
+    fn extract_operator() {
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            foo@bar
+            foo$bar
+        "#}));
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            ( foo+ bar )@baz
+        "#}));
+        // insta::assert_snapshot!(fmt(indoc! {r#"
+        //     list(foo = 1, bar =
+        //     2)@baz
+        // "#}));
     }
 }

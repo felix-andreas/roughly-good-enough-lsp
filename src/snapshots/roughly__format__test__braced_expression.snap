@@ -1,0 +1,5 @@
+---
+source: src/format.rs
+expression: "fmt(indoc! { r#\"\n            {}\n        \"# })"
+---
+{}
