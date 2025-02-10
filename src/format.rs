@@ -145,7 +145,9 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             let name_fmt = fmt(name)?;
             let body_fmt = fmt(body)?;
             let parameters_fmt = fmt(parameters)?;
-            if parameters.start_position().row == parameters.end_position().row {
+            if parameters_fmt.is_empty()
+                || parameters.start_position().row == parameters.end_position().row
+            {
                 format!("{}({}) {}", name_fmt, parameters_fmt, body_fmt)
             } else {
                 format!(
@@ -381,6 +383,10 @@ mod test {
         insta::assert_snapshot!(fmt(indoc! {r#"
             function(
                 a , b=  "foo") {}
+        "#}));
+        insta::assert_snapshot!(fmt(indoc! {r#"
+        	function(
+            ) {}
         "#}));
     }
 
