@@ -328,21 +328,11 @@ pub fn parse_function(function: &Node, rope: &Rope) -> (Vec<DocumentSymbol>, Opt
     (symbols, Some(detail))
 }
 
-// todo: consider resusing global parser (maybe behind Mutex??)
-pub fn parse(text: &str, maybe_tree: Option<&Tree>) -> Tree {
-    let mut parser = tree_sitter::Parser::new();
-    let language = tree_sitter_r::LANGUAGE;
-    parser
-        .set_language(&language.into())
-        .expect("Error loading R parser");
-    let tree = parser.parse(text, maybe_tree).unwrap();
-    tree
-}
-
 #[cfg(test)]
 mod test {
     use {
-        super::{get_document_symbols_ng, index, parse},
+        super::{get_document_symbols_ng, index},
+        crate::tree,
         indoc::indoc,
         ropey::Rope,
         tower_lsp::lsp_types::SymbolKind,
@@ -361,7 +351,7 @@ mod test {
             }
             baz <- { "foo"; 3.14 }
         "#};
-        let symbols = get_document_symbols_ng(&parse(text, None), &Rope::from_str(text));
+        let symbols = get_document_symbols_ng(&tree::parse(text, None), &Rope::from_str(text));
 
         assert_eq!(symbols[0].name, "foo");
         assert_eq!(symbols[0].kind, SymbolKind::FUNCTION);
