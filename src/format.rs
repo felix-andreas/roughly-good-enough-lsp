@@ -111,7 +111,7 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             .children_by_field_name(field, cursor)
             .map(f)
             .collect::<Result<Vec<String>, FormatError>>()
-    };
+    }
 
     let get_raw = || rope.byte_slice(node.byte_range()).to_string();
 
