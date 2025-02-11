@@ -171,16 +171,23 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
 
     if node.is_extra() && node.kind() == "comment" {
         let raw = get_raw();
-        // reformat comments like #foo to # foo
-        return Ok(match raw.split_once(char::is_whitespace) {
-            None => match raw.split_once(char::is_alphanumeric) {
-                Some((prefix, content)) => format!("{prefix} {content}"),
-                None => raw,
-            },
-            Some(_) => raw,
-        }
-        .trim_end()
-        .into());
+        // reformat comments like #foo to # foo but keep #' foo
+        let prefix = raw
+            .chars()
+            .take_while(|c| c.is_ascii_punctuation())
+            .collect::<String>();
+        let content = raw
+            .chars()
+            .skip_while(|c| c.is_ascii_punctuation())
+            .collect::<String>();
+        let content = content.trim_end();
+        dbg!(&prefix, &content);
+        let sep = if content.starts_with(char::is_whitespace) {
+            ""
+        } else {
+            " "
+        };
+        return Ok(format!("{prefix}{sep}{content}"));
     }
 
     if node.is_missing() {
@@ -694,6 +701,15 @@ mod test {
         	function(
             ) {}
         "#};
+        assert_fmt! {r#"
+            function(
+            	# foo
+                foo, #foo
+                #bar
+                #  bar
+                bar = 3, #bar
+            )
+        "#};
     }
 
     #[test]
@@ -739,10 +755,14 @@ mod test {
     fn comment_formatting() {
         assert_fmt! {r#"
            #foo
+           ##foo
            ## foo
+           ### foo
+           # # foo
            #    foo
            #'foo
            #
+           # #
         "#};
     }
 
