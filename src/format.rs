@@ -1,31 +1,85 @@
 use {
     crate::{
-        tree,
+        cli, tree,
         utils::{self, indent_by},
     },
+    console::style,
+    ignore::Walk,
     ropey::Rope,
     std::path::PathBuf,
     thiserror::Error,
     tree_sitter::{Node, TreeCursor},
 };
 
-pub fn run(files: &[PathBuf]) {
-    if files.is_empty() {
-        eprintln!("PLEASE PROVIDE A FILE!");
-    }
-    files.iter().for_each(|file| {
-        eprintln!("SHOW DIFF FOR {file:?}");
-        let text = std::fs::read_to_string(file).unwrap();
-        let tree = tree::parse(&text, None);
-        let rope = Rope::from_str(&text);
-        match format(tree.root_node(), &rope) {
-            Ok(fmt) => print_diff(&text, &fmt),
-            Err(error) => {
-                eprintln!("failed to format: {error}");
+pub fn run(maybe_files: Option<&[PathBuf]>, check: bool, diff: bool) -> bool {
+    let root: Vec<PathBuf> = vec![".".into()];
+    let files = maybe_files.unwrap_or(&root);
+
+    let mut n_files = 0;
+    let mut n_unformatted = 0;
+    let mut n_errors = 0;
+    files
+        .iter()
+        .flat_map(|file| Walk::new(file).into_iter())
+        .filter_map(|e| e.ok())
+        .map(|entry| entry.into_path())
+        .filter(|path| {
+            path.extension()
+                .map(|ext| ext == "R" || ext == "r")
+                .unwrap_or(false)
+        })
+        .for_each(|path| {
+            n_files += 1;
+            let old = std::fs::read_to_string(&path).unwrap();
+            let tree = tree::parse(&old, None);
+            let rope = Rope::from_str(&old);
+            let new = match format(tree.root_node(), &rope) {
+                Ok(new) => new,
+                Err(_) => {
+                    n_errors += 1;
+                    cli::error(&format!("failed to format: {}", path.display()));
+                    return;
+                }
+            };
+            if old != new {
+                n_unformatted += 1;
+                if diff {
+                    eprintln!("Diff in {}:", path.display());
+                    print_diff(&old, &new);
+                } else if check {
+                    eprintln!("Would reformat: {}", style(path.display()).bold());
+                } else {
+                    if let Err(_) = std::fs::write(&path, new) {
+                        cli::error(&format!("failed to write to file: {}", path.display()));
+                    }
+                }
             }
-        }
-        eprintln!();
-    });
+        });
+
+    if n_files == 0 {
+        cli::warning("No R files found under the given path(s)");
+        return true;
+    }
+
+    let (first, second) = if check {
+        ("would be reformatted", "already formatted")
+    } else {
+        ("reformatted", "left unchanged")
+    };
+
+    eprintln!(
+        "{} file{} {first}, {} file{} {second}",
+        n_unformatted,
+        if n_unformatted == 1 { "" } else { "s" },
+        n_files - n_unformatted,
+        if n_files - n_unformatted == 1 {
+            ""
+        } else {
+            "s"
+        },
+    );
+
+    n_unformatted == 0 && n_errors == 0
 }
 
 // from: https://github.com/mitsuhiko/similar/blob/main/examples/terminal-inline.rs
@@ -50,7 +104,7 @@ pub fn print_diff(old: &str, new: &str) {
 
     for (idx, group) in diff.grouped_ops(3).iter().enumerate() {
         if idx > 0 {
-            println!("{:-^1$}", "-", 80);
+            eprintln!("{:-^1$}", "-", 80);
         }
         for op in group {
             for change in diff.iter_inline_changes(op) {
@@ -59,7 +113,7 @@ pub fn print_diff(old: &str, new: &str) {
                     ChangeTag::Insert => ("+", Style::new().green()),
                     ChangeTag::Equal => (" ", Style::new().dim()),
                 };
-                print!(
+                eprint!(
                     "{}{} |{}",
                     style(Line(change.old_index())).dim(),
                     style(Line(change.new_index())).dim(),
@@ -67,13 +121,13 @@ pub fn print_diff(old: &str, new: &str) {
                 );
                 for (emphasized, value) in change.iter_strings_lossy() {
                     if emphasized {
-                        print!("{}", s.apply_to(value).underlined().on_black());
+                        eprint!("{}", s.apply_to(value).underlined().on_black());
                     } else {
-                        print!("{}", s.apply_to(value));
+                        eprint!("{}", s.apply_to(value));
                     }
                 }
                 if change.missing_newline() {
-                    println!();
+                    eprintln!();
                 }
             }
         }
@@ -93,7 +147,7 @@ pub enum FormatError {
     },
 }
 
-fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
+pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
     let kind = node.kind();
     let fmt = |node: Node| format(node, rope);
     let field = |field: &'static str| {

@@ -1,8 +1,12 @@
 use {
-    crate::{index, tree},
+    crate::{format, index, tree},
     dashmap::DashMap,
     ropey::Rope,
-    tower_lsp::{Client, LanguageServer, LspService, Server, jsonrpc::Result, lsp_types::*},
+    tower_lsp::{
+        Client, LanguageServer, LspService, Server,
+        jsonrpc::{Error, Result},
+        lsp_types::*,
+    },
     tree_sitter::{InputEdit, Point, Tree},
 };
 
@@ -17,6 +21,7 @@ pub async fn run() {
     });
 
     log::info!("starting language server ... listing for stdin");
+    log::info!("for more info run 'roughly --help'");
     Server::new(stdin, stdout, socket).serve(service).await;
 }
 
@@ -54,6 +59,7 @@ impl LanguageServer for Backend {
                     ..Default::default()
                 }),
                 // definition_provider: Some(OneOf::Left(true)),
+                document_formatting_provider: Some(OneOf::Left(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
                 text_document_sync: Some(TextDocumentSyncCapability::Options(
                     TextDocumentSyncOptions {
@@ -285,6 +291,35 @@ impl LanguageServer for Backend {
         }();
 
         Ok(completions.map(CompletionResponse::Array))
+    }
+
+    //
+    // FORMATTING
+    //
+
+    async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
+        let Some(document) = self.document_map.get(&params.text_document.uri) else {
+            log::info!("formatting: failed to acquire symbols map");
+            // todo: understand when this happens
+            return Err(Error::internal_error());
+        };
+        let (rope, tree) = (&document.rope, &document.tree);
+        let new = match format::format(tree.root_node(), &rope) {
+            Ok(new) => new,
+            Err(error) => {
+                log::error!("formatting: {}", error);
+                return Err(Error::internal_error());
+            }
+        };
+
+        // TODO: only format if necessary and send text edits...
+        Ok(Some(vec![TextEdit {
+            range: Range::new(
+                Position::new(0, 0),
+                Position::new(rope.len_lines() as u32, 0),
+            ),
+            new_text: new,
+        }]))
     }
 
     //

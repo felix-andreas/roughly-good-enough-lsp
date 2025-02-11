@@ -1,3 +1,9 @@
+fmt *args:
+	@cargo run -q -- fmt {{args}}
+
+lint *args:
+	@cargo run -q -- lint {{args}}
+
 test:
 	cargo test -- --nocapture
 
