@@ -1,0 +1,14 @@
+---
+source: src/format.rs
+assertion_line: 552
+expression: "fmt(indoc!\n{\n    r#\"\n            {\n                    # single line\n                a # next\n\n\n                # multi\n                # line\n                # comment\n                b\n            }\n        \"#\n})"
+---
+{
+  # single line
+  a # next
+
+  # multi
+  # line
+  # comment
+  b
+}
