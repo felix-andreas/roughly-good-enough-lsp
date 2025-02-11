@@ -253,59 +253,56 @@ pub fn symbols_for_block(root: &Node, rope: &Rope) -> Vec<DocumentSymbol> {
     let mut symbols = vec![];
 
     for node in root.children(&mut cursor) {
-        match node.kind() {
-            "binary_operator" => {
-                let lhs = node.child(0).unwrap();
-                let op = node.child(1).unwrap();
-                let rhs = node.child(2).unwrap();
-                // todo: fix this
-                if lhs.kind() == "identifier" && op.kind() == "<-" {
-                    let (kind, detail, children) = match rhs.kind() {
-                        "function_definition" => {
-                            let (children, detail) = parse_function(&rhs, rope);
-                            (SymbolKind::FUNCTION, detail, Some(children))
-                        }
-                        "program" | "braced_expression" => {
-                            let block_symbols = symbols_for_block(&rhs, rope);
-                            let kind = block_symbols
-                                .last()
-                                .map(|symbol| symbol.kind)
-                                .unwrap_or(SymbolKind::NULL);
-                            symbols.extend(block_symbols);
+        if node.kind() == "binary_operator" {
+            let lhs = node.child(0).unwrap();
+            let op = node.child(1).unwrap();
+            let rhs = node.child(2).unwrap();
+            // todo: fix this
+            if lhs.kind() == "identifier" && op.kind() == "<-" {
+                let (kind, detail, children) = match rhs.kind() {
+                    "function_definition" => {
+                        let (children, detail) = parse_function(&rhs, rope);
+                        (SymbolKind::FUNCTION, detail, Some(children))
+                    }
+                    "program" | "braced_expression" => {
+                        let block_symbols = symbols_for_block(&rhs, rope);
+                        let kind = block_symbols
+                            .last()
+                            .map(|symbol| symbol.kind)
+                            .unwrap_or(SymbolKind::NULL);
+                        symbols.extend(block_symbols);
 
-                            (
-                                kind,
-                                // note: kind of braced expression is last expression
-                                None, None,
-                            )
-                        }
-                        "integer" | "float" | "complex" => (SymbolKind::NUMBER, None, None),
-                        "true" | "false" => (SymbolKind::BOOLEAN, None, None),
-                        "string" => (SymbolKind::STRING, None, None),
-                        "null" => (SymbolKind::NULL, None, None),
-                        _ => (SymbolKind::VARIABLE, None, None),
-                    };
-                    let range =
-                        utils::rope_range_to_lsp_range(lhs.start_byte()..lhs.end_byte(), rope)
-                            .unwrap();
-                    symbols.push(
-                        #[allow(deprecated)]
-                        DocumentSymbol {
-                            name: rope
-                                .byte_slice(lhs.start_byte()..lhs.end_byte())
-                                .to_string(),
+                        (
                             kind,
-                            detail,
-                            tags: None,
-                            range,
-                            selection_range: range,
-                            children,
-                            deprecated: None,
-                        },
-                    )
-                }
+                            // note: kind of braced expression is last expression
+                            None, None,
+                        )
+                    }
+                    "integer" | "float" | "complex" => (SymbolKind::NUMBER, None, None),
+                    "true" | "false" => (SymbolKind::BOOLEAN, None, None),
+                    "string" => (SymbolKind::STRING, None, None),
+                    "null" => (SymbolKind::NULL, None, None),
+                    _ => (SymbolKind::VARIABLE, None, None),
+                };
+                let range =
+                    utils::rope_range_to_lsp_range(lhs.start_byte()..lhs.end_byte(), rope)
+                        .unwrap();
+                symbols.push(
+                    #[allow(deprecated)]
+                    DocumentSymbol {
+                        name: rope
+                            .byte_slice(lhs.start_byte()..lhs.end_byte())
+                            .to_string(),
+                        kind,
+                        detail,
+                        tags: None,
+                        range,
+                        selection_range: range,
+                        children,
+                        deprecated: None,
+                    },
+                )
             }
-            _ => {}
         }
     }
     symbols

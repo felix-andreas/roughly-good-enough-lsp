@@ -1,4 +1,3 @@
-#![allow(warnings)]
 use {
     crate::{
         tree,
@@ -7,7 +6,7 @@ use {
     ropey::Rope,
     std::path::PathBuf,
     thiserror::Error,
-    tree_sitter::{Node, Tree, TreeCursor},
+    tree_sitter::{Node, TreeCursor},
 };
 
 pub fn run(files: &[PathBuf]) {
@@ -99,7 +98,7 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
     let fmt = |node: Node| format(node, rope);
     let field = |field: &'static str| {
         node.child_by_field_name(field)
-            .ok_or_else(|| FormatError::MissingField { kind: kind, field })
+            .ok_or(FormatError::MissingField { kind, field })
     };
     let field_optional = |field: &'static str| node.child_by_field_name(field);
     fn fields(
@@ -119,15 +118,11 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
     if node.is_extra() && node.kind() == "comment" {
         let raw = get_raw();
         let pattern = if raw.starts_with("#'") { "#'" } else { "#" };
-        return Ok(match raw.split_once(pattern) {
-            Some((first, second)) => {
-                if second.starts_with(" ") {
-                    raw.trim_end().into()
-                } else {
-                    format!("{first} {}", second.trim_end())
-                }
+        return Ok(match raw.strip_prefix(pattern) {
+            Some(content) if !content.starts_with(" ") => {
+                format!("{pattern} {}", content.trim_end())
             }
-            None => raw.trim_end().into(),
+            _ => raw.trim_end().into(),
         });
     }
 
@@ -155,9 +150,9 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             let maybe_value = field_optional("value");
             match (maybe_name, maybe_value) {
                 (Some(name), Some(value)) => format!("{} = {}", fmt(name)?, fmt(value)?),
-                (None, Some(value)) => format!("{}", fmt(value)?),
-                (Some(name), None) => format!("{}", fmt(name)?),
-                (None, None) => format!(""),
+                (None, Some(value)) => (fmt(value)?).to_string(),
+                (Some(name), None) => (fmt(name)?).to_string(),
+                (None, None) => String::new(),
             }
         }
         "arguments" => {
@@ -172,11 +167,11 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                 .skip(1)
                 .take(node.child_count() - 2)
                 .map(|child| {
-                    let mut tmp = fmt(child)?;
+                    let tmp = fmt(child)?;
                     let prev_node_local = maybe_prev_node;
                     maybe_prev_node = Some(child);
                     if child.kind() == "comma" {
-                        return Ok(format!(","));
+                        return Ok(",".to_string());
                     }
                     if child.is_extra() {
                         return Ok(match prev_node_local {
@@ -186,20 +181,22 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                                 format!(" {tmp}")
                             }
                             Some(_) => format!("\n{tmp}"),
-                            None => format!("{tmp}"),
+                            None => tmp.to_string(),
                         });
                     }
                     let result = format!(
                         "{}{}",
                         if is_first_arg {
                             if prev_node_local.is_some() { "\n" } else { "" }
+                        } else if is_multiline {
+                            "\n"
                         } else {
-                            if is_multiline { "\n" } else { " " }
+                            " "
                         },
                         tmp
                     );
                     is_first_arg = false;
-                    return Ok(result);
+                    Ok(result)
                 })
                 .collect::<Result<String, FormatError>>()?
         }
@@ -230,32 +227,32 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                 .skip(1)
                 .take(node.child_count() - 2)
                 .map(|child| {
-                    let mut tmp = fmt(child)?;
-                    let tmp = match prev_end {
+                    let line = fmt(child)?;
+                    let result = match prev_end {
                         Some(prev_end)
                             if child.kind() == "comment"
                                 && prev_end == child.end_position().row =>
                         {
-                            format!(" {}", tmp)
+                            format!(" {}", line)
                         }
                         Some(prev_end) => {
                             format!(
                                 "{}{}",
                                 "\n".repeat(usize::min(2, child.end_position().row - prev_end)),
-                                tmp
+                                line
                             )
                         }
-                        None => tmp,
+                        None => line,
                     };
                     prev_end = Some(child.end_position().row);
-                    Ok(tmp)
+                    Ok(result)
                 })
                 .collect::<Result<Vec<String>, FormatError>>()?;
 
             // we only indent if { and } are not on the same line
             if open.start_position().row == close.end_position().row {
                 if lines.is_empty() {
-                    format!("{{}}")
+                    "{}".to_string()
                 } else {
                     format!("{{ {} }}", lines.join("; "))
                 }
@@ -387,8 +384,8 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             let mut prev_end = None;
             node.children(&mut cursor)
                 .map(|child| {
-                    let mut tmp = fmt(child)?;
-                    let tmp = match prev_end {
+                    let tmp = fmt(child)?;
+                    let result = match prev_end {
                         Some(prev_end)
                             if child.kind() == "comment"
                                 && prev_end == child.end_position().row =>
@@ -405,7 +402,7 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                         None => tmp,
                     };
                     prev_end = Some(child.end_position().row);
-                    Ok(tmp)
+                    Ok(result)
                 })
                 .chain(std::iter::once(Ok("\n".into())))
                 .collect::<Result<String, FormatError>>()?
@@ -424,7 +421,7 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                         format!("\"{}\"", fmt(string_content)?)
                     }
                 }
-                None => format!("\"\""),
+                None => "\"\"".to_string(),
             }
         }
         "string_content" => get_raw(),
@@ -595,7 +592,8 @@ mod test {
                 # foo
                 f
                 # foo bar 
-                #     foo bar 
+                #   foo bar 
+                #   foo bar 
                 a = 1, #bar
 
 
