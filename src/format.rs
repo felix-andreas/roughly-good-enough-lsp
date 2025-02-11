@@ -491,7 +491,6 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
 #[cfg(test)]
 mod test {
     use {super::*, crate::tree, indoc::indoc};
-    // TODO: TEST COMMENTS
 
     fn fmt(text: &str) -> String {
         let tree = tree::parse(text, None);
@@ -501,55 +500,61 @@ mod test {
         format(tree.root_node(), &Rope::from_str(text)).unwrap()
     }
 
+    macro_rules! assert_fmt {
+        ($input:expr) => {
+            insta::assert_snapshot!(fmt(indoc! {$input}));
+        };
+    }
+
     #[test]
     fn test_binary_operator() {
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        assert_fmt! {r#"
             4 + 2
-        "#}));
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        "#};
+        assert_fmt! {r#"
             4 + 2*3
-        "#}));
+        "#};
         // assignments
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        assert_fmt! {r#"
             x<-1
-        "#}));
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        "#};
+        assert_fmt! {r#"
             x<-1;y<-2
-        "#}));
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        "#};
+        assert_fmt! {r#"
             foo |>
                 bar
-        "#}));
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        "#};
+        assert_fmt! {r#"
             foo %>% bar %>%
                     baz
-        "#}));
+        "#};
     }
 
     #[test]
     fn test_braced_expression() {
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        assert_fmt! {r#"
             {}
-        "#}));
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        "#};
+        assert_fmt! {r#"
             { 1L;2}
-        "#}));
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        "#};
+        assert_fmt! {r#"
             {
                 foo
                 bar
             }
-        "#}));
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        "#};
+        assert_fmt! {r#"
             {foo;
                 bar}
-        "#}));
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        "#};
+        assert_fmt! {r#"
             {
                 a # foo
             }
-        "#}));
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        "#};
+        assert_fmt! {r#"
             {
                     # single line
                 a # next
@@ -560,32 +565,32 @@ mod test {
                 # comment
                 b
             }
-        "#}));
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        "#};
+        assert_fmt! {r#"
             {
                 a
 
                 b
             }
-        "#}));
+        "#};
     }
 
     #[test]
     fn test_call() {
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        assert_fmt! {r#"
             list  (a = 1, b= 2L ,c =3i  )
-        "#}));
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        "#};
+        assert_fmt! {r#"
             list  (a = 1,
              b= 2L)
-        "#}));
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        "#};
+        assert_fmt! {r#"
             list  (
                 # foo
                 a = 1, #bar
                 b= 2L) #baz
-        "#}));
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        "#};
+        assert_fmt! {r#"
             foo  ( #foo
                 # foo
                 f
@@ -597,45 +602,45 @@ mod test {
                 b= 2L) #baz
 
                 # foo
-        "#}));
+        "#};
     }
 
     #[test]
     fn test_function_definition() {
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        assert_fmt! {r#"
             function(a, b= "foo") {}
-        "#}));
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        "#};
+        assert_fmt! {r#"
             function(a,
             b=  "foo") {}
-        "#}));
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        "#};
+        assert_fmt! {r#"
             (\(a, b) a *  b)(2, 3)
-        "#}));
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        "#};
+        assert_fmt! {r#"
             function(
                 a , b=  "foo") {}
-        "#}));
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        "#};
+        assert_fmt! {r#"
         	function(
             ) {}
-        "#}));
+        "#};
     }
 
     #[test]
     fn extract_operator() {
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        assert_fmt! {r#"
             foo@bar
             foo$bar
             foo @ bar
             foo$  bar
-        "#}));
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        "#};
+        assert_fmt! {r#"
             ( foo+ bar )@baz
-        "#}));
-        insta::assert_snapshot!(fmt(indoc! {r#"
+        "#};
+        assert_fmt! {r#"
             list(foo = 1, bar =
             2)@baz
-        "#}));
+        "#};
     }
 }

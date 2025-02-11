@@ -1,6 +1,5 @@
 ---
 source: src/format.rs
-assertion_line: 547
 expression: "fmt(indoc!\n{ r#\"\n            {\n                a # foo\n            }\n        \"# })"
 ---
 {
