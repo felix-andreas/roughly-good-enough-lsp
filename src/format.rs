@@ -1,6 +1,9 @@
 #![allow(warnings)]
 use {
-    crate::{tree, utils},
+    crate::{
+        tree,
+        utils::{self, indent_by},
+    },
     ropey::Rope,
     std::path::PathBuf,
     thiserror::Error,
@@ -92,20 +95,8 @@ pub enum FormatError {
 }
 
 fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
-    if node.is_missing() {
-        let parent = node.parent().unwrap();
-        return Err(FormatError::Missing {
-            kind: parent.kind(),
-            raw: rope.byte_slice(parent.byte_range()).to_string(),
-        });
-    }
-
     let kind = node.kind();
-    if !node.is_named() {
-        return Ok(kind.into());
-    }
-
-    let get_raw = || rope.byte_slice(node.byte_range()).to_string();
+    let fmt = |node: Node| format(node, rope);
     let field = |field: &'static str| {
         node.child_by_field_name(field)
             .ok_or_else(|| FormatError::MissingField { kind: kind, field })
@@ -122,7 +113,24 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             .map(f)
             .collect::<Result<Vec<String>, FormatError>>()
     };
-    let fmt = |node: Node| format(node, rope);
+
+    let get_raw = || rope.byte_slice(node.byte_range()).to_string();
+
+    if node.is_extra() && node.kind() == "comment" {
+        return Ok(format!("# {}", get_raw().trim_start_matches("#").trim()));
+    }
+
+    if node.is_missing() {
+        let parent = node.parent().unwrap();
+        return Err(FormatError::Missing {
+            kind: parent.kind(),
+            raw: get_raw(),
+        });
+    }
+
+    if !node.is_named() {
+        return Ok(get_raw());
+    }
 
     // DEBUG
     // dbg!(node.child(0));
@@ -145,27 +153,93 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             let mut cursor = node.walk();
             let open = field("open")?;
             let close = field("close")?;
-            let arguments = fields("argument", &mut cursor, fmt)?;
-            let seperator = if open.start_position().row == close.end_position().row {
-                ", "
-            } else {
-                ",\n"
-            };
-            arguments.join(seperator)
+            let mut maybe_prev_node = None;
+            let is_multiline = open.start_position().row != close.end_position().row;
+
+            let mut is_first_arg = true;
+            node.children(&mut cursor)
+                .skip(1)
+                .take(node.child_count() - 2)
+                .map(|child| {
+                    let mut tmp = fmt(child)?;
+                    let prev_node_local = maybe_prev_node;
+                    maybe_prev_node = Some(child);
+                    if child.kind() == "comma" {
+                        return Ok(format!(","));
+                    }
+                    if child.is_extra() {
+                        return Ok(match prev_node_local {
+                            Some(prev_node)
+                                if prev_node.end_position().row == child.start_position().row =>
+                            {
+                                format!(" {tmp}")
+                            }
+                            Some(_) => format!("\n{tmp}"),
+                            None => format!("{tmp}"),
+                        });
+                    }
+                    let result = format!(
+                        "{}{}",
+                        if is_first_arg {
+                            if prev_node_local.is_some() { "\n" } else { "" }
+                        } else {
+                            if is_multiline { "\n" } else { " " }
+                        },
+                        tmp
+                    );
+                    is_first_arg = false;
+                    return Ok(result);
+                })
+                .collect::<Result<String, FormatError>>()?
         }
         "binary_operator" => {
+            let lhs = field("lhs")?;
+            let operator = field("operator")?;
+            let rhs = field("rhs")?;
+            let is_multiline = lhs.end_position().row != rhs.start_position().row;
             format!(
-                "{} {} {}",
-                fmt(field("lhs")?)?,
-                field("operator")?.kind(),
-                fmt(field("rhs")?)?
+                "{} {}{}{}",
+                fmt(lhs)?,
+                fmt(operator)?,
+                if is_multiline { "\n" } else { " " },
+                if is_multiline {
+                    indent_by(2, fmt(rhs)?)
+                } else {
+                    fmt(rhs)?
+                }
             )
         }
         "braced_expression" => {
             let mut cursor = node.walk();
             let open = node.child_by_field_name("open").unwrap();
             let close = node.child_by_field_name("close").unwrap();
-            let lines = fields("body", &mut cursor, fmt)?;
+            let mut prev_end = None;
+            let lines = node
+                .children(&mut cursor)
+                .skip(1)
+                .take(node.child_count() - 2)
+                .map(|child| {
+                    let mut tmp = fmt(child)?;
+                    let tmp = match prev_end {
+                        Some(prev_end)
+                            if child.kind() == "comment"
+                                && prev_end == child.end_position().row =>
+                        {
+                            format!(" {}", tmp)
+                        }
+                        Some(prev_end) => {
+                            format!(
+                                "{}{}",
+                                "\n".repeat(usize::min(2, child.end_position().row - prev_end)),
+                                tmp
+                            )
+                        }
+                        None => tmp,
+                    };
+                    prev_end = Some(child.end_position().row);
+                    Ok(tmp)
+                })
+                .collect::<Result<Vec<String>, FormatError>>()?;
 
             // we only indent if { and } are not on the same line
             if open.start_position().row == close.end_position().row {
@@ -175,7 +249,7 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                     format!("{{ {} }}", lines.join("; "))
                 }
             } else {
-                format!("{{\n{}\n}}", utils::indent_by(2, lines.join("\n")))
+                format!("{{\n{}\n}}", utils::indent_by(2, lines.join("")))
             }
         }
         "call" => {
@@ -240,14 +314,14 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             match maybe_alternative {
                 Some(alternative) => {
                     format!(
-                        "if {} {} else {}",
+                        "if ({}) {} else {}",
                         condition,
                         consequence,
                         fmt(alternative)?
                     )
                 }
                 None => {
-                    format!("if {} {}", condition, consequence,)
+                    format!("if ({}) {}", condition, consequence,)
                 }
             }
         }
@@ -299,14 +373,30 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
         }
         "program" => {
             let mut cursor = node.walk();
+            let mut prev_end = None;
             node.children(&mut cursor)
-                .map(fmt)
-                .collect::<Result<Vec<String>, FormatError>>()?
-                .join(if node.start_position().row == node.end_position().row {
-                    "; "
-                } else {
-                    "\n"
+                .map(|child| {
+                    let mut tmp = fmt(child)?;
+                    let tmp = match prev_end {
+                        Some(prev_end)
+                            if child.kind() == "comment"
+                                && prev_end == child.end_position().row =>
+                        {
+                            format!(" {}", tmp)
+                        }
+                        Some(prev_end) => {
+                            format!(
+                                "{}{}",
+                                "\n".repeat(usize::min(2, child.end_position().row - prev_end)),
+                                tmp
+                            )
+                        }
+                        None => tmp,
+                    };
+                    prev_end = Some(child.end_position().row);
+                    Ok(tmp)
                 })
+                .collect::<Result<String, FormatError>>()?
         }
         "repeat_statement" => {
             format!("repeat {}", fmt(field("body")?)?)
@@ -407,6 +497,14 @@ mod test {
         insta::assert_snapshot!(fmt(indoc! {r#"
             x<-1;y<-2
         "#}));
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            foo |>
+                bar
+        "#}));
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            foo %>% bar %>%
+                    baz
+        "#}));
     }
 
     #[test]
@@ -427,6 +525,30 @@ mod test {
             {foo;
                 bar}
         "#}));
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            {
+                a # foo
+            }
+        "#}));
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            {
+                    # single line
+                a # next
+
+
+                # multi
+                # line
+                # comment
+                b
+            }
+        "#}));
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            {
+                a
+
+                b
+            }
+        "#}));
     }
 
     #[test]
@@ -437,6 +559,25 @@ mod test {
         insta::assert_snapshot!(fmt(indoc! {r#"
             list  (a = 1,
              b= 2L)
+        "#}));
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            list  (
+                # foo
+                a = 1, #bar
+                b= 2L) #baz
+        "#}));
+        insta::assert_snapshot!(fmt(indoc! {r#"
+            foo  ( #foo
+                # foo
+                f
+                # foo bar 
+                #     foo bar 
+                a = 1, #bar
+
+
+                b= 2L) #baz
+
+                # foo
         "#}));
     }
 
@@ -467,6 +608,8 @@ mod test {
         insta::assert_snapshot!(fmt(indoc! {r#"
             foo@bar
             foo$bar
+            foo @ bar
+            foo$  bar
         "#}));
         insta::assert_snapshot!(fmt(indoc! {r#"
             ( foo+ bar )@baz

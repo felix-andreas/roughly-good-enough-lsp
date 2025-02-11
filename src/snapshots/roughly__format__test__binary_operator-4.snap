@@ -2,5 +2,4 @@
 source: src/format.rs
 expression: "fmt(indoc! { r#\"\n            x<-1;y<-2\n        \"# })"
 ---
-x <- 1
-y <- 2
+x <- 1y <- 2
