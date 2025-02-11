@@ -1,0 +1,9 @@
+---
+source: src/format.rs
+expression: "fmt(indoc!\n{\n    r#\"\n           #foo\n           ## foo\n           #    foo\n           #'foo\n           #\n        \"#\n})"
+---
+# foo
+# # foo
+#    foo
+#' foo
+#

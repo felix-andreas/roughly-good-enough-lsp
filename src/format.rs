@@ -171,13 +171,16 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
 
     if node.is_extra() && node.kind() == "comment" {
         let raw = get_raw();
-        let pattern = if raw.starts_with("#'") { "#'" } else { "#" };
-        return Ok(match raw.strip_prefix(pattern) {
-            Some(content) if !content.starts_with(" ") => {
-                format!("{pattern} {}", content.trim_end())
-            }
-            _ => raw.trim_end().into(),
-        });
+        // reformat comments like #foo to # foo
+        return Ok(match raw.split_once(char::is_whitespace) {
+            None => match raw.split_once(char::is_alphanumeric) {
+                Some((prefix, content)) => format!("{prefix} {content}"),
+                None => raw,
+            },
+            Some(_) => raw,
+        }
+        .trim_end()
+        .into());
     }
 
     if node.is_missing() {
@@ -200,7 +203,6 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             // support the switch fallthrough
             let mut cursor = node.walk();
             let has_equal = node.children(&mut cursor).any(|node| node.kind() == "=");
-            println!("{},{has_equal:?}", get_raw());
 
             match (maybe_name, maybe_value) {
                 (Some(name), Some(value)) => format!("{} = {}", fmt(name)?, fmt(value)?),
@@ -348,7 +350,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
         "float" => get_raw(),
         "for_statement" => {
             format!(
-                "for ({}) in {} {}",
+                "for ({} in {}) {}",
                 fmt(field("variable")?)?,
                 fmt(field("sequence")?)?,
                 fmt(field("body")?)?
@@ -515,7 +517,11 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                 )
             }
         }
-        "unary_operator" => format!("{}{}", fmt(field("operator")?)?, fmt(field("rhs")?)?),
+        "unary_operator" => {
+            let operator = field("operator")?;
+            let spacing = if operator.kind() == "~" { " " } else { "" };
+            format!("{}{spacing}{}", fmt(operator)?, fmt(field("rhs")?)?)
+        }
         "while_statement" => {
             format!(
                 "while ({}) {}",
@@ -729,7 +735,30 @@ mod test {
         "#};
     }
 
+    #[test]
+    fn comment_formatting() {
+        assert_fmt! {r#"
+           #foo
+           ## foo
+           #    foo
+           #'foo
+           #
+        "#};
+    }
+
     // FROM https://github.com/r-lib/tree-sitter-r/blob/a0d3e3307489c3ca54da8c7b5b4e0c5f5fd6953a/test/corpus/literals.txt
+    #[test]
+    fn comments() {
+        assert_fmt! {r#"
+            # a comment'
+
+            '# not a comment'
+
+
+            '
+            # still not a comment'
+        "#}
+    }
 
     #[test]
     fn constants() {
