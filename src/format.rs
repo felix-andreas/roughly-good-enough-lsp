@@ -192,19 +192,20 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
         return Ok(get_raw());
     }
 
-    // DEBUG
-    // dbg!(node.child(0));
-    // dbg!(node.child(1));
-    // dbg!(node.child(2));
-    // dbg!(node.child(3));
-
     Ok(match kind {
         "argument" => {
             let maybe_name = field_optional("name");
             let maybe_value = field_optional("value");
+
+            // support the switch fallthrough
+            let mut cursor = node.walk();
+            let has_equal = node.children(&mut cursor).any(|node| node.kind() == "=");
+            println!("{},{has_equal:?}", get_raw());
+
             match (maybe_name, maybe_value) {
                 (Some(name), Some(value)) => format!("{} = {}", fmt(name)?, fmt(value)?),
                 (None, Some(value)) => (fmt(value)?).to_string(),
+                (Some(name), None) if has_equal => format!("{} = ", fmt(name)?),
                 (Some(name), None) => (fmt(name)?).to_string(),
                 (None, None) => String::new(),
             }
@@ -259,11 +260,19 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             let operator = field("operator")?;
             let rhs = field("rhs")?;
             let is_multiline = lhs.end_position().row != rhs.start_position().row;
+            let has_spacing = operator.kind() == ":";
             format!(
-                "{} {}{}{}",
+                "{}{}{}{}{}",
                 fmt(lhs)?,
+                if has_spacing { "" } else { " " },
                 fmt(operator)?,
-                if is_multiline { "\n" } else { " " },
+                if is_multiline {
+                    "\n"
+                } else if has_spacing {
+                    ""
+                } else {
+                    " "
+                },
                 if is_multiline {
                     indent_by(2, fmt(rhs)?)
                 } else {
@@ -339,7 +348,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
         "float" => get_raw(),
         "for_statement" => {
             format!(
-                "for {} in {} {}",
+                "for ({}) in {} {}",
                 fmt(field("variable")?)?,
                 fmt(field("sequence")?)?,
                 fmt(field("body")?)?
@@ -562,9 +571,10 @@ mod test {
     fn binary_operator() {
         assert_fmt! {r#"
             4 + 2
+            4 + 2*3
         "#};
         assert_fmt! {r#"
-            4 + 2*3
+            1:10
         "#};
         // assignments
         assert_fmt! {r#"
@@ -706,14 +716,16 @@ mod test {
         "#};
     }
 
-    //OTHER
+    // SPECIAL CASES
     #[test]
-    fn numbers() {
+    fn switch_fallthrough() {
         assert_fmt! {r#"
-            1L
-            1e3L
-            -0.27961154
-            4.1i + 1e-2i
+            switch(foo,
+                x = 1,
+                "y" = 2,
+                z = ,
+                3
+            )
         "#};
     }
 

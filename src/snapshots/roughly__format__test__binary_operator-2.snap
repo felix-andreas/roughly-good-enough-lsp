@@ -1,5 +1,5 @@
 ---
 source: src/format.rs
-expression: "fmt(indoc! { r#\"\n            4 + 2*3\n        \"# })"
+expression: "fmt(indoc! { r#\"\n            1:10\n        \"# })"
 ---
-4 + 2 * 3
+1:10

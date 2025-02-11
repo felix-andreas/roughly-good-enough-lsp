@@ -11,7 +11,7 @@ test:
 	cargo test -- --nocapture
 
 snapshot *args:
-	cargo insta test --review -- {{args}}
+	cargo insta test --review -- --nocapture {{args}}
 
 bundle *args:
 	npm run package -- {{args}}
