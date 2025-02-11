@@ -117,7 +117,18 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
     let get_raw = || rope.byte_slice(node.byte_range()).to_string();
 
     if node.is_extra() && node.kind() == "comment" {
-        return Ok(format!("# {}", get_raw().trim_start_matches("#").trim()));
+        let raw = get_raw();
+        let pattern = if raw.starts_with("#'") { "#'" } else { "#" };
+        return Ok(match raw.split_once(pattern) {
+            Some((first, second)) => {
+                if second.starts_with(" ") {
+                    raw.trim_end().into()
+                } else {
+                    format!("{first} {}", second.trim_end())
+                }
+            }
+            None => raw.trim_end().into(),
+        });
     }
 
     if node.is_missing() {
@@ -396,6 +407,7 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                     prev_end = Some(child.end_position().row);
                     Ok(tmp)
                 })
+                .chain(std::iter::once(Ok("\n".into())))
                 .collect::<Result<String, FormatError>>()?
         }
         "repeat_statement" => {
@@ -404,7 +416,14 @@ fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
         "string" => {
             let maybe_string_content = field_optional("content");
             match maybe_string_content {
-                Some(string_content) => format!("\"{}\"", fmt(string_content)?),
+                Some(string_content) => {
+                    let content = fmt(string_content)?;
+                    if content.contains("\"") {
+                        get_raw()
+                    } else {
+                        format!("\"{}\"", fmt(string_content)?)
+                    }
+                }
                 None => format!("\"\""),
             }
         }
