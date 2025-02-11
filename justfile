@@ -1,3 +1,6 @@
+run *args:
+	@cargo run -q -- {{args}}
+
 fmt *args:
 	@cargo run -q -- fmt {{args}}
 

@@ -292,7 +292,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                         Some(prev_end) => {
                             format!(
                                 "{}{}",
-                                "\n".repeat(usize::min(2, child.end_position().row - prev_end)),
+                                "\n".repeat(usize::min(2, child.start_position().row - prev_end)),
                                 line
                             )
                         }
@@ -388,7 +388,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             }
         }
         "integer" => get_raw(),
-        "na" => "NA".into(),
+        "na" => get_raw(),
         "namespace_operator" => {
             let lhs = field("lhs")?;
             let op = field("operator")?;
@@ -449,7 +449,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                         Some(prev_end) => {
                             format!(
                                 "{}{}",
-                                "\n".repeat(usize::min(2, child.end_position().row - prev_end)),
+                                "\n".repeat(usize::min(2, child.start_position().row - prev_end)),
                                 tmp
                             )
                         }
@@ -520,11 +520,11 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
         "comment" => get_raw(),
         "dot_dot_i" => get_raw(),
         "dots" => "...".into(),
-        "escape_sequence" => todo!(),
+        "escape_sequence" => get_raw(),
         "false" => "FALSE".into(),
         "identifier" => get_raw(),
-        "inf" => "inf".into(),
-        "nan" => "nan".into(),
+        "inf" => "Inf".into(),
+        "nan" => "NaN".into(),
         "next" => "next".into(),
         "null" => "NULL".into(),
         "return" => "return".into(),
@@ -541,6 +541,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
 
 #[cfg(test)]
 mod test {
+    // consider testing: https://github.com/r-lib/tree-sitter-r/blob/a0d3e3307489c3ca54da8c7b5b4e0c5f5fd6953a/test/corpus/expressions.txt
     use {super::*, crate::tree, indoc::indoc};
 
     fn fmt(text: &str) -> String {
@@ -558,7 +559,7 @@ mod test {
     }
 
     #[test]
-    fn test_binary_operator() {
+    fn binary_operator() {
         assert_fmt! {r#"
             4 + 2
         "#};
@@ -583,7 +584,7 @@ mod test {
     }
 
     #[test]
-    fn test_braced_expression() {
+    fn braced_expression() {
         assert_fmt! {r#"
             {}
         "#};
@@ -627,7 +628,7 @@ mod test {
     }
 
     #[test]
-    fn test_call() {
+    fn call() {
         assert_fmt! {r#"
             list  (a = 1, b= 2L ,c =3i  )
         "#};
@@ -658,7 +659,7 @@ mod test {
     }
 
     #[test]
-    fn test_function_definition() {
+    fn function_definition() {
         assert_fmt! {r#"
             function(a, b= "foo") {}
         "#};
@@ -694,5 +695,126 @@ mod test {
             list(foo = 1, bar =
             2)@baz
         "#};
+    }
+
+    #[test]
+    fn program() {
+        assert_fmt! {r#"
+        	"foo"
+            if (1) {
+            }
+        "#};
+    }
+
+    //OTHER
+    #[test]
+    fn numbers() {
+        assert_fmt! {r#"
+            1L
+            1e3L
+            -0.27961154
+            4.1i + 1e-2i
+        "#};
+    }
+
+    // FROM https://github.com/r-lib/tree-sitter-r/blob/a0d3e3307489c3ca54da8c7b5b4e0c5f5fd6953a/test/corpus/literals.txt
+
+    #[test]
+    fn constants() {
+        assert_fmt! {r#"
+            TRUE
+            FALSE
+            NULL
+            Inf
+            NaN
+            NA
+            NA_real_
+            NA_character_
+            NA_complex_
+        "#}
+    }
+
+    #[test]
+    fn identifiers() {
+        assert_fmt! {r#"
+            foo
+            foo2
+            foo.bar
+            .foo.bar
+            .__NAMESPACE__.
+            foo_bar
+            `_foo`
+            `a "literal"`
+            `another
+            literal \` foo`
+            `backslash followed by newline \
+            `
+            `\``
+            # Pipe placeholder
+            _
+            # Recognized as a single `_foo` identifier, even if invalid R code (#71).
+            _foo
+            __foo
+            _foo_
+        "#}
+    }
+
+    #[test]
+    fn strings() {
+        assert_fmt! {r##"
+            ""
+            ''
+            "foo"
+            "foo
+            bar"
+            "#"
+            ","
+            "}"
+            'foo'
+            'foo
+            bar'
+            '#'
+            ','
+            '}'
+        "##}
+    }
+
+    #[test]
+    fn integers() {
+        assert_fmt! {r#"
+            12332L
+            0L
+            12L
+            0xDEADL
+            1e1L
+            # Technically, R parses this as a float with a warning, but for our purposes this is good enough
+            0.1L
+        "#}
+    }
+
+    #[test]
+    fn floats() {
+        assert_fmt! {r#"
+            .66
+            .11
+            123.4123
+            .1234
+            0xDEAD
+            x <- -.66
+            1e322
+            1e-3
+            1e+3
+            1.8e10
+            1.e10
+            1e10
+        "#}
+    }
+
+    #[test]
+    fn dot_dot_i() {
+        assert_fmt! {r#"
+            ..1
+            ..10
+        "#}
     }
 }

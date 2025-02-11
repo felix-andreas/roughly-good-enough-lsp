@@ -1,0 +1,8 @@
+---
+source: src/format.rs
+expression: "fmt(indoc!\n{ r#\"\n        \t\"foo\"\n            if (1) {\n            }\n        \"# })"
+---
+"foo"
+if (1) {
+
+}
