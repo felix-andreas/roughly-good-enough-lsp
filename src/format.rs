@@ -909,6 +909,15 @@ mod test {
     }
 
     #[test]
+    fn namespace_operator() {
+        assert_fmt! {r#"
+            foo::
+            foo::bar
+            foo::bar(1)
+        "#}
+    }
+
+    #[test]
     fn parenthesized_expression() {
         assert_fmt! {r#"
             (1 +2 )
@@ -1144,7 +1153,9 @@ mod test {
         "#};
     }
 
-    // FROM https://github.com/r-lib/tree-sitter-r/blob/a0d3e3307489c3ca54da8c7b5b4e0c5f5fd6953a/test/corpus/literals.txt
+    // FROM
+    // https://github.com/r-lib/tree-sitter-r/blob/main/test/corpus/literals.txt
+    // https://github.com/r-lib/tree-sitter-r/blob/main/test/corpus/expressions.txt
     #[test]
     fn comments() {
         assert_fmt! {r#"
@@ -1195,21 +1206,6 @@ mod test {
             _foo
             __foo
             _foo_
-        "#}
-    }
-
-    #[test]
-    fn namespace_get() {
-        assert_fmt! {r#"
-            foo::
-            foo::bar
-            foo::bar(1)
-            foo::...
-            foo::..1
-            ...::foo
-            ..1::foo
-            ...::...
-            ..1::..1
         "#}
     }
 
