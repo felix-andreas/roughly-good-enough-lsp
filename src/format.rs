@@ -1,8 +1,5 @@
 use {
-    crate::{
-        cli, tree,
-        utils::{self, indent_by},
-    },
+    crate::{cli, tree, utils},
     console::style,
     ignore::Walk,
     ropey::Rope,
@@ -148,6 +145,8 @@ pub enum FormatError {
 }
 
 pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
+    const INDENT_BY: usize = 2;
+
     let kind = node.kind();
     let fmt = |node: Node| format(node, rope);
     let field = |field: &'static str| {
@@ -202,7 +201,9 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
         return Ok(get_raw());
     }
 
-    Ok(match kind {
+    let mut handles_comments = false;
+
+    let result = match kind {
         "argument" => {
             let maybe_name = field_optional("name");
             let maybe_value = field_optional("value");
@@ -220,6 +221,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             }
         }
         "arguments" => {
+            handles_comments = true;
             let mut cursor = node.walk();
             let open = field("open")?;
             let close = field("close")?;
@@ -237,7 +239,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                     if child.kind() == "comma" {
                         return Ok(",".to_string());
                     }
-                    if child.is_extra() {
+                    if child.kind() == "comment" {
                         return Ok(match prev_node_local {
                             Some(prev_node)
                                 if prev_node.end_position().row == child.start_position().row =>
@@ -265,16 +267,27 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                 .collect::<Result<String, FormatError>>()?
         }
         "binary_operator" => {
+            handles_comments = true;
+            let mut cursor = node.walk();
+            let comments = node
+                .children(&mut cursor)
+                .filter(|node| node.kind() == "comment")
+                .map(fmt)
+                .collect::<Result<Vec<String>, FormatError>>()?
+                .join(&format!("\n{}", " ".repeat(INDENT_BY)));
+
             let lhs = field("lhs")?;
             let operator = field("operator")?;
             let rhs = field("rhs")?;
             let is_multiline = lhs.end_position().row != rhs.start_position().row;
             let has_spacing = operator.kind() == ":";
             format!(
-                "{}{}{}{}{}",
+                "{}{}{}{}{}{}{}",
                 fmt(lhs)?,
                 if has_spacing { "" } else { " " },
                 fmt(operator)?,
+                if comments.is_empty() { "" } else { " " },
+                comments,
                 if is_multiline {
                     "\n"
                 } else if has_spacing {
@@ -283,13 +296,14 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                     " "
                 },
                 if is_multiline {
-                    indent_by(2, fmt(rhs)?)
+                    utils::indent_by(INDENT_BY, fmt(rhs)?)
                 } else {
                     fmt(rhs)?
                 }
             )
         }
         "braced_expression" => {
+            handles_comments = true;
             let mut cursor = node.walk();
             let open = node.child_by_field_name("open").unwrap();
             let close = node.child_by_field_name("close").unwrap();
@@ -329,7 +343,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                     format!("{{ {} }}", lines.join("; "))
                 }
             } else {
-                format!("{{\n{}\n}}", utils::indent_by(2, lines.join("")))
+                format!("{{\n{}\n}}", utils::indent_by(INDENT_BY, lines.join("")))
             }
         }
         "call" => {
@@ -341,7 +355,10 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             if arguments.start_position().row == arguments.end_position().row {
                 format!("{function_fmt}({arguments_fmt})",)
             } else {
-                format!("{function_fmt}(\n{}\n)", utils::indent_by(2, arguments_fmt))
+                format!(
+                    "{function_fmt}(\n{}\n)",
+                    utils::indent_by(INDENT_BY, arguments_fmt)
+                )
             }
         }
         "complex" => get_raw(),
@@ -379,7 +396,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                 format!(
                     "{}(\n{}\n) {}",
                     name_fmt,
-                    utils::indent_by(2, parameters_fmt),
+                    utils::indent_by(INDENT_BY, parameters_fmt),
                     body_fmt
                 )
             }
@@ -427,16 +444,50 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             }
         }
         "parameters" => {
-            let mut cursor = node.walk();
+            handles_comments = true;
             let open = field("open")?;
             let close = field("close")?;
-            let parameters = fields("parameter", &mut cursor, fmt)?;
-            let seperator = if open.start_position().row == close.end_position().row {
-                ", "
-            } else {
-                ",\n"
-            };
-            parameters.join(seperator)
+            let is_multiline = open.start_position().row != close.end_position().row;
+
+            let mut maybe_prev_node = None;
+            let mut is_first_param = true;
+            let mut cursor = node.walk();
+            node.children(&mut cursor)
+                .skip(1)
+                .take(node.child_count() - 2)
+                .map(|child| {
+                    let tmp = fmt(child)?;
+                    let prev_node_local = maybe_prev_node;
+                    maybe_prev_node = Some(child);
+                    if child.kind() == "comma" {
+                        return Ok(",".to_string());
+                    }
+                    if child.kind() == "comment" {
+                        return Ok(match prev_node_local {
+                            Some(prev_node)
+                                if prev_node.end_position().row == child.start_position().row =>
+                            {
+                                format!(" {tmp}")
+                            }
+                            Some(_) => format!("\n{tmp}"),
+                            None => tmp.to_string(),
+                        });
+                    }
+                    let result = format!(
+                        "{}{}",
+                        if is_first_param {
+                            if prev_node_local.is_some() { "\n" } else { "" }
+                        } else if is_multiline {
+                            "\n"
+                        } else {
+                            " "
+                        },
+                        tmp
+                    );
+                    is_first_param = false;
+                    Ok(result)
+                })
+                .collect::<Result<String, FormatError>>()?
         }
         "parenthesized_expression" => {
             let open = field("open")?;
@@ -448,10 +499,11 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             if open.start_position().row == close.end_position().row {
                 format!("({body_fmt})",)
             } else {
-                format!("(\n{}\n)", utils::indent_by(2, body_fmt))
+                format!("(\n{}\n)", utils::indent_by(INDENT_BY, body_fmt))
             }
         }
         "program" => {
+            handles_comments = true;
             let mut cursor = node.walk();
             let mut prev_end = None;
             node.children(&mut cursor)
@@ -510,7 +562,10 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             if arguments.start_position().row == arguments.end_position().row {
                 format!("{function_fmt}[{arguments_fmt}]",)
             } else {
-                format!("{function_fmt}[\n{}\n]", utils::indent_by(2, arguments_fmt))
+                format!(
+                    "{function_fmt}[\n{}\n]",
+                    utils::indent_by(INDENT_BY, arguments_fmt)
+                )
             }
         }
         "subset2" => {
@@ -524,7 +579,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             } else {
                 format!(
                     "{function_fmt}[[\n{}\n]]",
-                    utils::indent_by(2, arguments_fmt)
+                    utils::indent_by(INDENT_BY, arguments_fmt)
                 )
             }
         }
@@ -562,6 +617,18 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                 raw: get_raw(),
             });
         }
+    };
+
+    Ok(if handles_comments {
+        result
+    } else {
+        let mut cursor = node.walk();
+        node.children(&mut cursor)
+            .filter(|node| node.kind() == "comment")
+            .map(fmt)
+            .chain(std::iter::once(Ok(result)))
+            .collect::<Result<Vec<String>, FormatError>>()?
+            .join("\n")
     })
 }
 
@@ -589,6 +656,10 @@ mod test {
         assert_fmt! {r#"
             4 + 2
             4 + 2*3
+            4 +
+                3 +
+                    2 +
+                        1
         "#};
         assert_fmt! {r#"
             1:10
@@ -607,6 +678,13 @@ mod test {
         assert_fmt! {r#"
             foo %>% bar %>%
                     baz
+        "#};
+        assert_fmt! {r#"
+            foo |> # foo
+            #bar
+            bar |>#bar
+            baz |>
+                qux
         "#};
     }
 
@@ -686,6 +764,45 @@ mod test {
     }
 
     #[test]
+    fn extract_operator() {
+        assert_fmt! {r#"
+            foo@bar
+            foo$bar
+            foo @ bar
+            foo$  bar
+        "#};
+        assert_fmt! {r#"
+            ( foo+ bar )@baz
+        "#};
+        assert_fmt! {r#"
+            list(foo = 1, bar =
+            2)@baz
+        "#};
+    }
+
+    #[test]
+    fn for_statement() {
+        assert_fmt! {r#"
+        	for (x in 1:2) {
+                print(x)
+            }
+        	for (x in c(1, # foo
+            2)) {
+                print(x)
+            }
+            for (x in 1:3) #foo
+            {
+                x
+            }
+            for (x in 1:3)
+            #foo
+            {
+                x
+            }
+        "#};
+    }
+
+    #[test]
     fn function_definition() {
         assert_fmt! {r#"
             function(a, b= "foo") {}
@@ -705,32 +822,14 @@ mod test {
         	function(
             ) {}
         "#};
-        // todo: make this work
-        // assert_fmt! {r#"
-        //     function(
-        //     	# foo
-        //         foo, #foo
-        //         #bar
-        //         #  bar
-        //         bar = 3 #bar
-        //     ) {}
-        // "#};
-    }
-
-    #[test]
-    fn extract_operator() {
         assert_fmt! {r#"
-            foo@bar
-            foo$bar
-            foo @ bar
-            foo$  bar
-        "#};
-        assert_fmt! {r#"
-            ( foo+ bar )@baz
-        "#};
-        assert_fmt! {r#"
-            list(foo = 1, bar =
-            2)@baz
+            function(
+            	# foo
+                foo, #foo
+                #bar
+                #  bar
+                bar = 3 #bar
+            ) {}
         "#};
     }
 
@@ -755,6 +854,32 @@ mod test {
             )
         "#};
     }
+
+    // #[test]
+    // fn data_table() {
+    //     assert_fmt! {r#"
+    //         ans <- flights[, .(arr_delay, dep_delay)]
+    //         DT[,.(V4.Sum=sum(V4)), by=V1][order(-V1)]
+    //         DT[,':='(V1=round(exp(V1),2), V2=LETTERS[4:6])][]
+    //         DT[,lapply(.SD,sum),by=V2, # comment
+    //             .SDcols=c("V3","V4")]
+    //     "#};
+    // }
+
+    // #[test]
+    // fn dplyr() {
+    //     assert_fmt! {r#"
+    //         nameshift <- c(SL = "Sepal.Length")
+    //         head(dplyr::rename(iris[, 1:2], ! ! !nameshift), 3)
+    //         head(dplyr::rename(iris[, 1:2], !! !nameshift), 3)
+    //         head(dplyr::rename(iris[, 1:2], !!!nameshift), 3)
+    //         my_summarise <- function(df, group_var) {
+    //         df %>%
+    //             group_by(! !group_var) %>%
+    //             summarise(a = mean(a))
+    //         }
+    //     "#};
+    // }
 
     #[test]
     fn comment_formatting() {
