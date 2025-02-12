@@ -154,18 +154,6 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             .ok_or(FormatError::MissingField { kind, field })
     };
     let field_optional = |field: &'static str| node.child_by_field_name(field);
-    fn fields(
-        field: &'static str,
-        cursor: &mut TreeCursor,
-        f: impl Fn(Node) -> Result<String, FormatError>,
-    ) -> Result<Vec<String>, FormatError> {
-        cursor
-            .node()
-            .children_by_field_name(field, cursor)
-            .map(f)
-            .collect::<Result<Vec<String>, FormatError>>()
-    }
-
     let get_raw = || rope.byte_slice(node.byte_range()).to_string();
 
     if node.is_extra() && node.kind() == "comment" {
@@ -336,12 +324,10 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                 .collect::<Result<Vec<String>, FormatError>>()?;
 
             // we only indent if { and } are not on the same line
-            if open.start_position().row == close.end_position().row {
-                if lines.is_empty() {
-                    "{}".to_string()
-                } else {
-                    format!("{{ {} }}", lines.join("; "))
-                }
+            if lines.is_empty() {
+                "{}".to_string()
+            } else if open.start_position().row == close.end_position().row {
+                format!("{{ {} }}", lines.join("; "))
             } else {
                 format!("{{\n{}\n}}", utils::indent_by(INDENT_BY, lines.join("")))
             }
@@ -637,18 +623,18 @@ mod test {
     // consider testing: https://github.com/r-lib/tree-sitter-r/blob/a0d3e3307489c3ca54da8c7b5b4e0c5f5fd6953a/test/corpus/expressions.txt
     use {super::*, crate::tree, indoc::indoc};
 
-    fn fmt(text: &str) -> String {
+    macro_rules! assert_fmt {
+        ($input:expr) => {
+            insta::assert_snapshot!(format_str(indoc! {$input}));
+        };
+    }
+
+    fn format_str(text: &str) -> String {
         let tree = tree::parse(text, None);
 
         // DEBUG
         dbg!(tree.root_node().to_sexp());
         format(tree.root_node(), &Rope::from_str(text)).unwrap()
-    }
-
-    macro_rules! assert_fmt {
-        ($input:expr) => {
-            insta::assert_snapshot!(fmt(indoc! {$input}));
-        };
     }
 
     #[test]
@@ -692,6 +678,8 @@ mod test {
     fn braced_expression() {
         assert_fmt! {r#"
             {}
+            {
+            }
         "#};
         assert_fmt! {r#"
             { 1L;2}
@@ -834,6 +822,34 @@ mod test {
     }
 
     #[test]
+    fn if_statement() {
+        assert_fmt! {r#"
+            if (a>b) {
+                1
+            } else {
+            "foo"
+            }
+            x <- if (T) 4
+            if (TRUE) #foo
+            10
+
+            if (foo <bar) {
+            lala
+            1} else if (1 >2) {2 
+            } else {3}
+        "#};
+    }
+
+    #[test]
+    fn namespace_operator() {
+        assert_fmt! {r#"
+        	"foo"
+            if (1) {
+            }
+        "#};
+    }
+
+    #[test]
     fn program() {
         assert_fmt! {r#"
         	"foo"
@@ -947,6 +963,21 @@ mod test {
             _foo
             __foo
             _foo_
+        "#}
+    }
+
+    #[test]
+    fn namespace_get() {
+        assert_fmt! {r#"
+            foo::
+            foo::bar
+            foo::bar(1)
+            foo::...
+            foo::..1
+            ...::foo
+            ..1::foo
+            ...::...
+            ..1::..1
         "#}
     }
 
