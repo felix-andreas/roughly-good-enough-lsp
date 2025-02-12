@@ -304,7 +304,7 @@ impl LanguageServer for Backend {
             return Err(Error::internal_error());
         };
         let (rope, tree) = (&document.rope, &document.tree);
-        let new = match format::format(tree.root_node(), &rope) {
+        let new = match format::format(tree.root_node(), rope) {
             Ok(new) => new,
             Err(error) => {
                 log::error!("formatting: {}", error);

@@ -17,7 +17,7 @@ pub fn run(maybe_files: Option<&[PathBuf]>, check: bool, diff: bool) -> bool {
     let mut n_errors = 0;
     files
         .iter()
-        .flat_map(|file| Walk::new(file).into_iter())
+        .flat_map(Walk::new)
         .filter_map(|e| e.ok())
         .map(|entry| entry.into_path())
         .filter(|path| {
@@ -45,10 +45,8 @@ pub fn run(maybe_files: Option<&[PathBuf]>, check: bool, diff: bool) -> bool {
                     print_diff(&old, &new);
                 } else if check {
                     eprintln!("Would reformat: {}", style(path.display()).bold());
-                } else {
-                    if let Err(_) = std::fs::write(&path, new) {
-                        cli::error(&format!("failed to write to file: {}", path.display()));
-                    }
+                } else if std::fs::write(&path, new).is_err() {
+                    cli::error(&format!("failed to write to file: {}", path.display()));
                 }
             }
         });
