@@ -1,0 +1,7 @@
+---
+source: src/format.rs
+expression: "format_str(indoc!\n{\n    r#\"\n            foo::\n            foo::bar\n            foo::bar(1)\n        \"#\n})"
+---
+foo::
+foo::bar
+foo::bar(1)
