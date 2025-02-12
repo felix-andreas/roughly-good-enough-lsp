@@ -1,0 +1,6 @@
+---
+source: src/format.rs
+expression: "format_str(indoc!\n{ r#\"\n            {}\n            {\n            }\n        \"# })"
+---
+{}
+{}

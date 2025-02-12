@@ -1,0 +1,10 @@
+---
+source: src/format.rs
+expression: "fmt(indoc!\n{\n    r#\"\n            # a comment'\n\n            '# not a comment'\n\n\n            '\n            # still not a comment'\n        \"#\n})"
+---
+# a comment'
+
+"# not a comment"
+
+"
+# still not a comment"

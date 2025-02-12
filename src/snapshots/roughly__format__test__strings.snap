@@ -1,0 +1,18 @@
+---
+source: src/format.rs
+expression: "fmt(indoc!\n{\n    r##\"\n            \"\"\n            ''\n            \"foo\"\n            \"foo\n            bar\"\n            \"#\"\n            \",\"\n            \"}\"\n            'foo'\n            'foo\n            bar'\n            '#'\n            ','\n            '}'\n        \"##\n})"
+---
+""
+""
+"foo"
+"foo
+bar"
+"#"
+","
+"}"
+"foo"
+"foo
+bar"
+"#"
+","
+"}"

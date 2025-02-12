@@ -1,0 +1,11 @@
+---
+source: src/format.rs
+expression: "format_str(indoc!\n{\n    r#\"\n        \t# foo\n            { # bar\n            #baz\n            a\n            # qux\n            }\n        \"#\n})"
+---
+# foo
+{
+  # bar
+  # baz
+  a
+  # qux
+}

@@ -66,6 +66,7 @@
                   ];
                 }
               ))
+              cargo-insta
               # libs
               # pkg-config
             ];

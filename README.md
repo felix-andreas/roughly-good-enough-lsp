@@ -10,26 +10,22 @@ Welcome to Roughly, the language server where we skip the fancy AST parsing and 
 
 ## Features
 
+* Completion
+  * Globals
+  * (TODO) Locals
+* Formatting
 * Indexing
   * Globals
   * S4
     * Classes
     * Generics
     * Methods
-* Goto Workspace Symbol <kbd>Ctrl</kbd> + <kbd>T</kbd>
+  * (TODO) R6
 * Goto Document Symbol <kbd>Ctrl</kbd> <kbd>Shift</kbd> + <kbd>O</kbd>
-* Commands
-  * Restart Language Server
-
-## Project layout
-
-Currenlty this extension assume that your `R` code has the following folder structure:
-
-| Path        | Type      |
-|-------------|-----------|
-| `R`        | directory |
-| `R/*.R`     | file      |
-| `NAMESPACE` | file      |
+* Goto Workspace Symbol <kbd>Ctrl</kbd> + <kbd>T</kbd>
+* VS Code Extension
+  * Commands
+    * Start/Stop/Restart the Language Server
 
 ## Installation
 
@@ -62,6 +58,42 @@ Configure the client via the `settings.json` to use the server binary:
   "roughly.path": "<path>"
 }
 ```
+
+## Usage
+
+Start the language server:
+
+```
+roughly lsp
+```
+
+To run roughly as a formatter:
+
+```
+roughly fmt                # Format all files in the current directory
+roughly fmt <path>         # Format all files in `<path>`
+roughly fmt --check        # Only check if files would be formatted
+roughly fmt --diff         # Only show diff if files would be formatted
+```
+
+Or, to run Roughly as a linter:
+
+```
+roughly lint               # Lint all files in the current directory
+roughly lint <path>        # Lint all files in `<path>`
+```
+
+
+## Project layout
+
+Currenlty this extension assume that your `R` code has the following folder structure:
+
+| Path        | Type      |
+|-------------|-----------|
+| `R`         | directory |
+| `R/*.R`     | file      |
+| `NAMESPACE` | file      |
+
 
 ## Development
 
@@ -99,6 +131,7 @@ For me this led to the issue that the language server wasn't spawned because I h
 * https://github.com/nix-community/vscode-nix-ide
 * https://github.com/wch/r-source/blob/trunk/src/main/gram.y
 * https://cran.r-project.org/doc/manuals/r-release/R-lang.html
+* https://github.com/TenStrings/glicol-lsp/blob/77e97d9c687dc5d66871ad5ec91b6f049de2b8e8/src/main.rs#L16
 
 ## License
 

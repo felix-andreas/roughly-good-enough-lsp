@@ -1,5 +1,17 @@
-test:
-	cargo test -- --nocapture
+run *args:
+	@cargo run -q -- {{args}}
+
+fmt *args:
+	@cargo run -q -- fmt {{args}}
+
+lint *args:
+	@cargo run -q -- lint {{args}}
+
+test *args:
+	cargo test -- --nocapture {{args}}
+
+snapshot *args:
+	cargo insta test --review -- --nocapture {{args}}
 
 bundle *args:
 	npm run package -- {{args}}
