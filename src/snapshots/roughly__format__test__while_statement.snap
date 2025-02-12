@@ -1,0 +1,16 @@
+---
+source: src/format.rs
+expression: "format_str(indoc!\n{\n    r#\"\n            while(x < 10)\n            { print(x)\n                x <- x + 1\n            }\n            while (x < 10) { #foo\n                print(x) }\n            while (x < 10)\n            #foo\n            {\n                print(x)\n            }\n        \"#\n})"
+---
+while (x < 10) {
+  print(x)
+  x <- x + 1
+}
+while (x < 10) {
+  # foo
+  print(x)
+}
+# foo
+while (x < 10) {
+  print(x)
+}

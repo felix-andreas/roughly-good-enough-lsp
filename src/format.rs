@@ -5,7 +5,7 @@ use {
     ropey::Rope,
     std::path::PathBuf,
     thiserror::Error,
-    tree_sitter::{Node, TreeCursor},
+    tree_sitter::Node,
 };
 
 pub fn run(maybe_files: Option<&[PathBuf]>, check: bool, diff: bool) -> bool {
@@ -224,9 +224,6 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                     let tmp = fmt(child)?;
                     let prev_node_local = maybe_prev_node;
                     maybe_prev_node = Some(child);
-                    if child.kind() == "comma" {
-                        return Ok(",".to_string());
-                    }
                     if child.kind() == "comment" {
                         return Ok(match prev_node_local {
                             Some(prev_node)
@@ -238,10 +235,29 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                             None => tmp.to_string(),
                         });
                     }
+                    if child.kind() == "comma" {
+                        is_first_arg = false;
+                        return Ok(if prev_node_local
+                            .map(|node| node.kind() == "comment")
+                            .unwrap_or(false)
+                        {
+                            "\n,"
+                        } else {
+                            ","
+                        }
+                        .to_string());
+                    }
                     let result = format!(
                         "{}{}",
                         if is_first_arg {
-                            if prev_node_local.is_some() { "\n" } else { "" }
+                            if prev_node_local
+                                .map(|node| node.kind() == "comment")
+                                .unwrap_or(false)
+                            {
+                                "\n"
+                            } else {
+                                ""
+                            }
                         } else if is_multiline {
                             "\n"
                         } else {
@@ -444,9 +460,6 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                     let tmp = fmt(child)?;
                     let prev_node_local = maybe_prev_node;
                     maybe_prev_node = Some(child);
-                    if child.kind() == "comma" {
-                        return Ok(",".to_string());
-                    }
                     if child.kind() == "comment" {
                         return Ok(match prev_node_local {
                             Some(prev_node)
@@ -458,10 +471,30 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                             None => tmp.to_string(),
                         });
                     }
+                    is_first_param = false;
+                    if child.kind() == "comma" {
+                        return Ok(if prev_node_local
+                            .map(|node| node.kind() == "comment")
+                            .unwrap_or(false)
+                        {
+                            "\n,"
+                        } else {
+                            ","
+                        }
+                        .to_string());
+                    }
+                    is_first_param = false;
                     let result = format!(
                         "{}{}",
                         if is_first_param {
-                            if prev_node_local.is_some() { "\n" } else { "" }
+                            if prev_node_local
+                                .map(|node| node.kind() == "comment")
+                                .unwrap_or(false)
+                            {
+                                "\n"
+                            } else {
+                                ""
+                            }
                         } else if is_multiline {
                             "\n"
                         } else {
@@ -469,7 +502,6 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                         },
                         tmp
                     );
-                    is_first_param = false;
                     Ok(result)
                 })
                 .collect::<Result<String, FormatError>>()?
@@ -906,39 +938,155 @@ mod test {
     #[test]
     fn program() {
         assert_fmt! {r#"
-        	"foo"
-            if (1) {
+            # A simple comment
+            x <- 1 + 2
+            y <- x * 3
+            z <- if (y > 5) {
+            "greater"
+            } else {
+            "lesser"
             }
+            result <- function(a, b = 2) {
+            return(a + b)
+            }
+            list <- list(a = 1, b = 2, c = 3)
+            for (i in 1:10) {
+            print(i)
+            }
+            while (x < 10) {
+            x <- x + 1
+            }
+            repeat {
+            x <- x - 1
+            if (x == 0) break
+            }
+            foo <- function(x) x^2
+            bar <- foo(3)
+            baz <- c(1, 2, 3)
+            qux <- baz[1]
+            quux <- baz[[1]]
+            corge <- list(a = 1, b = 2)
+            grault <- corge$a
+            garply <- corge[["b"]]
+            waldo <- TRUE
+            fred <- FALSE
+            plugh <- NULL
+            xyzzy <- Inf
+            thud <- NaN
         "#};
     }
 
     #[test]
     fn repeat_statement() {
         assert_fmt! {r#"
+            repeat {
+                print("Hello, world!")
+            }
+            repeat {
+            }
+            repeat { #foo
+            }
+            repeat #foo
+            { }
         "#};
     }
 
     #[test]
     fn subset() {
         assert_fmt! {r#"
+            foo[x]
+            foo[x,   y]
+            foo[1, 2 ]
+            foo[x=1  , ,y  =3,4]
+            foo[  ]
+            foo[ , ]
+            foo[, ,]
+            foo[ x, ]
+            foo[x,,]
+            foo[,x ]
+            foo[,,x]
+            foo[x, ,y]
+            foo[,,x,,y,,]
+            foo[ #foo
+            1,2,3
+            ]
+            foo[ #foo
+            #bar
+            1,2,3
+            #baz
+            ]
+            foo[ #foo
+            ,,a
+            ]
         "#};
     }
 
     #[test]
     fn subset2() {
         assert_fmt! {r#"
+            foo[[x ]]
+            foo[[x,   y]]
+            foo[[1, 2 ]]
+            foo[[x=1  , ,y  =3,4]]
+            foo[[  ]]
+            foo[[ , ]]
+            foo[[, ,]]
+            foo[[ x, ]]
+            foo[[x,,]]
+            foo[[,x ]]
+            foo[[,,x]]
+            foo[[x, ,y]]
+            foo[[,,x,,y,,]]
+            foo[[ #foo
+            1,2,3
+            ]]
+            foo[[ #foo
+            #bar
+            1,2,3
+            #baz
+            ]]
+            foo[[ #foo
+            ,,a
+            ]]
         "#};
     }
 
     #[test]
     fn unary_operator() {
         assert_fmt! {r#"
+            !a
+            +a
+            -a
+            foo(!a, +   b)
+            foo(- a , bar)
+            !
+            a
+            -  b
+            -42
+            + 42
+            !TRUE
+            ~foo
+            -foo + bar
+            -  (foo + bar)
+            ! foo && bar
+            ~  foo | bar
         "#};
     }
 
     #[test]
     fn while_statement() {
         assert_fmt! {r#"
+            while(x < 10)
+            { print(x)
+                x <- x + 1
+            }
+            while (x < 10) { #foo
+                print(x) }
+            while (x < 10)
+            #foo
+            {
+                print(x)
+            }
         "#};
     }
 

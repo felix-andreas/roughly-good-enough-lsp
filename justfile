@@ -7,8 +7,8 @@ fmt *args:
 lint *args:
 	@cargo run -q -- lint {{args}}
 
-test:
-	cargo test -- --nocapture
+test *args:
+	cargo test -- --nocapture {{args}}
 
 snapshot *args:
 	cargo insta test --review -- --nocapture {{args}}

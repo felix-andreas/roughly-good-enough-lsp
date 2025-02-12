@@ -1,0 +1,13 @@
+---
+source: src/format.rs
+expression: "format_str(indoc!\n{\n    r#\"\n            repeat {\n                print(\"Hello, world!\")\n            }\n            repeat {\n            }\n            repeat { #foo\n            }\n            repeat #foo\n            { }\n        \"#\n})"
+---
+repeat {
+  print("Hello, world!")
+}
+repeat {}
+repeat {
+  # foo
+}
+# foo
+repeat {}
