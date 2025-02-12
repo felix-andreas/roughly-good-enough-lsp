@@ -471,8 +471,8 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                             None => tmp.to_string(),
                         });
                     }
-                    is_first_param = false;
                     if child.kind() == "comma" {
+                        is_first_param = false;
                         return Ok(if prev_node_local
                             .map(|node| node.kind() == "comment")
                             .unwrap_or(false)
@@ -483,7 +483,6 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                         }
                         .to_string());
                     }
-                    is_first_param = false;
                     let result = format!(
                         "{}{}",
                         if is_first_param {
@@ -502,6 +501,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                         },
                         tmp
                     );
+                    is_first_param = false;
                     Ok(result)
                 })
                 .collect::<Result<String, FormatError>>()?
