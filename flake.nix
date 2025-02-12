@@ -46,8 +46,12 @@
             motd = "";
             depsBuildBuild = with pkgs; [
               pkgsCross.mingwW64.stdenv.cc
+              pkgsCross.mingwW64.stdenv.cc.cc.lib
               pkgsCross.mingwW64.windows.pthreads
             ];
+            # TODO: fixes issue undefined reference to `ts_node_end_byte' in tree-sitter
+            # maybe we want a separate derivation to build for windows??
+            TARGET_CC = "${pkgs.pkgsCross.mingwW64.stdenv.cc}/bin/${pkgs.pkgsCross.mingwW64.stdenv.cc.targetPrefix}cc";
             packages = with pkgs; [
               just
               (radianWrapper.override {
