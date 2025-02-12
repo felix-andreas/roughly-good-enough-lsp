@@ -807,9 +807,9 @@ mod test {
             foo  ( #foo
                 # foo
                 f
-                # foo bar 
-                #   foo bar 
-                #   foo bar 
+                # foo bar
+                #   foo bar
+                #   foo bar
                 a = 1, #bar
 
 
@@ -903,7 +903,7 @@ mod test {
 
             if (foo <bar) {
             lala
-            1} else if (1 >2) {2 
+            1} else if (1 >2) {2
             } else {3}
         "#};
     }
@@ -1112,32 +1112,6 @@ mod test {
         "#};
     }
 
-    // #[test]
-    // fn data_table() {
-    //     assert_fmt! {r#"
-    //         ans <- flights[, .(arr_delay, dep_delay)]
-    //         DT[,.(V4.Sum=sum(V4)), by=V1][order(-V1)]
-    //         DT[,':='(V1=round(exp(V1),2), V2=LETTERS[4:6])][]
-    //         DT[,lapply(.SD,sum),by=V2, # comment
-    //             .SDcols=c("V3","V4")]
-    //     "#};
-    // }
-
-    // #[test]
-    // fn dplyr() {
-    //     assert_fmt! {r#"
-    //         nameshift <- c(SL = "Sepal.Length")
-    //         head(dplyr::rename(iris[, 1:2], ! ! !nameshift), 3)
-    //         head(dplyr::rename(iris[, 1:2], !! !nameshift), 3)
-    //         head(dplyr::rename(iris[, 1:2], !!!nameshift), 3)
-    //         my_summarise <- function(df, group_var) {
-    //         df %>%
-    //             group_by(! !group_var) %>%
-    //             summarise(a = mean(a))
-    //         }
-    //     "#};
-    // }
-
     #[test]
     fn comment_formatting() {
         assert_fmt! {r#"
@@ -1150,6 +1124,43 @@ mod test {
            #'foo
            #
            # #
+        "#};
+    }
+
+    #[test]
+    fn data_table() {
+        assert_fmt! {r#"
+            ans <- flights[, .(arr_delay, dep_delay)]
+            DT[,.(V4.Sum=sum(V4)), by=V1][order(-V1)]
+            DT[,':='(V1=round(exp(V1),2), V2=LETTERS[4:6])][]
+            DT[,lapply(.SD,sum),by=V2, # comment
+                .SDcols=c("V3","V4")]
+        "#};
+    }
+
+    #[test]
+    fn dplyr() {
+        assert_fmt! {r#"
+            starwars %>% #foo
+            group_by(species)   %>% #bar
+            select(height, mass)%>% ###   baz
+            summarise(
+                    height = mean(height, na.rm = TRUE),
+                mass = mean(mass, na.rm = TRUE)
+            )
+        "#};
+    }
+
+    #[test]
+    fn purrr() {
+        assert_fmt! {r#"
+            library(purrr)
+
+                    mtcars |>
+                split(mtcars$cyl) |>  # from base R
+            map(\(df) lm(mpg~wt, data    = df)) |>
+            map(summary  ) |>
+            map_dbl("r.squared"  )
         "#};
     }
 
