@@ -1,5 +1,6 @@
 ---
 source: src/format.rs
-expression: "fmt(indoc! { r#\"\n            {}\n        \"# })"
+expression: "format_str(indoc!\n{ r#\"\n            {}\n            {\n            }\n        \"# })"
 ---
+{}
 {}

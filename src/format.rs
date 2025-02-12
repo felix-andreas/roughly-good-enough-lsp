@@ -323,7 +323,6 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                 })
                 .collect::<Result<Vec<String>, FormatError>>()?;
 
-            // we only indent if { and } are not on the same line
             if lines.is_empty() {
                 "{}".to_string()
             } else if open.start_position().row == close.end_position().row {
@@ -476,16 +475,45 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                 .collect::<Result<String, FormatError>>()?
         }
         "parenthesized_expression" => {
-            let open = field("open")?;
-            let body = field("body")?;
-            let close = field("close")?;
+            handles_comments = true;
+            let mut cursor = node.walk();
+            let open = node.child_by_field_name("open").unwrap();
+            let close = node.child_by_field_name("close").unwrap();
 
-            let body_fmt = fmt(body)?;
-            // we only indent if { and } are not on the same line
-            if open.start_position().row == close.end_position().row {
-                format!("({body_fmt})",)
+            let mut prev_end = None;
+            let lines = node
+                .children(&mut cursor)
+                .skip(1)
+                .take(node.child_count() - 2)
+                .map(|child| {
+                    let line = fmt(child)?;
+                    let result = match prev_end {
+                        Some(prev_end)
+                            if child.kind() == "comment"
+                                && prev_end == child.end_position().row =>
+                        {
+                            format!(" {}", line)
+                        }
+                        Some(prev_end) => {
+                            format!(
+                                "{}{}",
+                                "\n".repeat(usize::min(2, child.start_position().row - prev_end)),
+                                line
+                            )
+                        }
+                        None => line,
+                    };
+                    prev_end = Some(child.end_position().row);
+                    Ok(result)
+                })
+                .collect::<Result<Vec<String>, FormatError>>()?;
+
+            if lines.is_empty() {
+                "()".to_string()
+            } else if open.start_position().row == close.end_position().row {
+                format!("({})", lines.join(""))
             } else {
-                format!("(\n{}\n)", utils::indent_by(INDENT_BY, body_fmt))
+                format!("(\n{}\n)", utils::indent_by(INDENT_BY, lines.join("")))
             }
         }
         "program" => {
@@ -700,6 +728,14 @@ mod test {
             }
         "#};
         assert_fmt! {r#"
+        	# foo
+            { # bar
+            #baz
+            a
+            # qux
+            }
+        "#};
+        assert_fmt! {r#"
             {
                     # single line
                 a # next
@@ -841,11 +877,29 @@ mod test {
     }
 
     #[test]
-    fn namespace_operator() {
+    fn parenthesized_expression() {
         assert_fmt! {r#"
-        	"foo"
-            if (1) {
-            }
+            (1 +2 )
+            (
+            #foo
+            1 +2 )
+            x <- ( # com
+            5
+            )
+            (
+                a #foo
+            )
+            (
+            	#foo
+                a #bar
+                #baz
+            )
+            ( #foo
+                a #bar
+            #baz
+            )
+            ( a #foo
+            )
         "#};
     }
 
@@ -855,6 +909,36 @@ mod test {
         	"foo"
             if (1) {
             }
+        "#};
+    }
+
+    #[test]
+    fn repeat_statement() {
+        assert_fmt! {r#"
+        "#};
+    }
+
+    #[test]
+    fn subset() {
+        assert_fmt! {r#"
+        "#};
+    }
+
+    #[test]
+    fn subset2() {
+        assert_fmt! {r#"
+        "#};
+    }
+
+    #[test]
+    fn unary_operator() {
+        assert_fmt! {r#"
+        "#};
+    }
+
+    #[test]
+    fn while_statement() {
+        assert_fmt! {r#"
         "#};
     }
 
