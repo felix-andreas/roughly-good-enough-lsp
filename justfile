@@ -67,8 +67,8 @@ publish-release $version:
 		"release/roughly-$version.vsix#VS Code extension" \
 		"release/roughly-$version#LSP server (Linux)" \
 		"release/roughly-$version.exe#LSP server (Windows)" \
-		--prerelease \
-		--generate-notes
+		--notes "" \
+		--prerelease
 
 update-release $version:
 	gh release upload $version \
