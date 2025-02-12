@@ -1,8 +1,0 @@
----
-source: src/format.rs
-expression: "fmt(indoc! { r#\"\n            list  (a = 1,\n             b= 2)\n        \"# })"
----
-list(
-  a = 1,
-  b = 2
-)

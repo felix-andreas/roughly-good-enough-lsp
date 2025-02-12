@@ -1,8 +1,0 @@
----
-source: src/format.rs
-expression: "fmt(indoc!\n{\n    r#\"\n            1L\n            1e3L\n            -0.27961154\n            4.1i + 1e-2i\n        \"#\n})"
----
-1L
-1e3L
--0.27961154
-4.1i + 1e-2i
