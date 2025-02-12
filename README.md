@@ -8,25 +8,6 @@
 
 Welcome to Roughly, the language server where we skip the fancy AST parsing and go straight to the syntax (just regex), because who has time for that when your R project is already making your computer cry?
 
-## Features
-
-* Completion
-  * Globals
-  * (TODO) Locals
-* Formatting
-* Indexing
-  * Globals
-  * S4
-    * Classes
-    * Generics
-    * Methods
-  * (TODO) R6
-* Goto Document Symbol <kbd>Ctrl</kbd> <kbd>Shift</kbd> + <kbd>O</kbd>
-* Goto Workspace Symbol <kbd>Ctrl</kbd> + <kbd>T</kbd>
-* VS Code Extension
-  * Commands
-    * Start/Stop/Restart the Language Server
-
 ## Installation
 
 ### Client
@@ -83,6 +64,24 @@ roughly lint               # Lint all files in the current directory
 roughly lint <path>        # Lint all files in `<path>`
 ```
 
+## Features
+
+* Completion
+  * Globals
+  * (TODO) Locals
+* Formatting
+* Indexing
+  * Globals
+  * S4
+    * Classes
+    * Generics
+    * Methods
+  * (TODO) R6
+* Goto Document Symbol <kbd>Ctrl</kbd> <kbd>Shift</kbd> + <kbd>O</kbd>
+* Goto Workspace Symbol <kbd>Ctrl</kbd> + <kbd>T</kbd>
+* VS Code Extension
+  * Commands
+    * Start/Stop/Restart the Language Server
 
 ## Project layout
 
