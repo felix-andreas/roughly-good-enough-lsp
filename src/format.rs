@@ -133,6 +133,8 @@ pub fn print_diff(old: &str, new: &str) {
 
 #[derive(Error, Debug)]
 pub enum FormatError {
+    #[error("Failed to parse node {raw} with parent of kind {kind}")]
+    SyntaxError { kind: &'static str, raw: String },
     #[error("The node of type {kind} has missing children {raw}")]
     Missing { kind: &'static str, raw: String },
     #[error("The node has unknown type {kind}: {raw}")]
@@ -156,6 +158,21 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
     let field_optional = |field: &'static str| node.child_by_field_name(field);
     let get_raw = || rope.byte_slice(node.byte_range()).to_string();
 
+    // note: currently we don't traverse open&close -> they never reach these conditions
+    if node.is_error() {
+        return Err(FormatError::SyntaxError {
+            kind: node.parent().unwrap().kind(),
+            raw: get_raw(),
+        });
+    }
+
+    if node.is_missing() {
+        return Err(FormatError::Missing {
+            kind: node.parent().unwrap().kind(),
+            raw: get_raw(),
+        });
+    }
+
     if node.is_extra() && node.kind() == "comment" {
         let raw = get_raw();
         // reformat comments like #foo to # foo but keep #' foo
@@ -168,21 +185,12 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             .skip_while(|c| c.is_ascii_punctuation())
             .collect::<String>();
         let content = content.trim_end();
-        dbg!(&prefix, &content);
         let sep = if content.starts_with(char::is_whitespace) {
             ""
         } else {
             " "
         };
         return Ok(format!("{prefix}{sep}{content}"));
-    }
-
-    if node.is_missing() {
-        let parent = node.parent().unwrap();
-        return Err(FormatError::Missing {
-            kind: parent.kind(),
-            raw: get_raw(),
-        });
     }
 
     if !node.is_named() {
@@ -680,21 +688,20 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
 
 #[cfg(test)]
 mod test {
-    // consider testing: https://github.com/r-lib/tree-sitter-r/blob/a0d3e3307489c3ca54da8c7b5b4e0c5f5fd6953a/test/corpus/expressions.txt
     use {super::*, crate::tree, indoc::indoc};
 
     macro_rules! assert_fmt {
         ($input:expr) => {
-            insta::assert_snapshot!(format_str(indoc! {$input}));
+            insta::assert_snapshot!(format_str(indoc! {$input}).unwrap());
         };
     }
 
-    fn format_str(text: &str) -> String {
+    fn format_str(text: &str) -> Result<String, FormatError> {
         let tree = tree::parse(text, None);
 
         // DEBUG
         dbg!(tree.root_node().to_sexp());
-        format(tree.root_node(), &Rope::from_str(text)).unwrap()
+        format(tree.root_node(), &Rope::from_str(text))
     }
 
     #[test]
@@ -1162,6 +1169,35 @@ mod test {
             map(summary  ) |>
             map_dbl("r.squared"  )
         "#};
+    }
+
+    // ERROR CASES
+    #[test]
+    fn error() {
+        let result = format_str(indoc! {r#"
+            function
+        "#});
+        dbg!(&result);
+
+        let Err(FormatError::SyntaxError { kind, raw }) = result else {
+            panic!()
+        };
+        assert_eq!(kind, "program");
+        assert_eq!(raw, "function");
+    }
+
+    #[test]
+    fn missing() {
+        assert_fmt! {r#"
+            x <- 1
+            function() { # missing function body
+                x <- 2
+                x <- 3
+            x <- 3
+        "#};
+
+        // uncomment in case we want to throw an error instead
+        // assert!(matches!(result, FormatError::Missing { "fuc",  }) )
     }
 
     // FROM
