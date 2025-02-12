@@ -707,8 +707,8 @@ mod test {
                 foo, #foo
                 #bar
                 #  bar
-                bar = 3, #bar
-            )
+                bar = 3 #bar
+            ) {}
         "#};
     }
 
