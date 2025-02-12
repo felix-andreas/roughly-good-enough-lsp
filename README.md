@@ -10,6 +10,9 @@ Welcome to Roughly, the language server where we skip the fancy AST parsing and 
 
 ## Features
 
+* Completion
+  * Globals
+  * (TODO) Locals
 * Formatting
 * Indexing
   * Globals
@@ -17,6 +20,7 @@ Welcome to Roughly, the language server where we skip the fancy AST parsing and 
     * Classes
     * Generics
     * Methods
+  * (TODO) R6
 * Goto Document Symbol <kbd>Ctrl</kbd> <kbd>Shift</kbd> + <kbd>O</kbd>
 * Goto Workspace Symbol <kbd>Ctrl</kbd> + <kbd>T</kbd>
 * VS Code Extension
