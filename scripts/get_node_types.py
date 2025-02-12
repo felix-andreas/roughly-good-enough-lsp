@@ -7,7 +7,7 @@ data = json.loads((Path.home() / "Downloads/node-types.json").read_text())
 for x in data:
     kind = f'{x["type"]}'.replace("\\", "\\\\").replace('"', '\\"')
     print(f'"{kind}" => "{kind}",')
-print("_ => todo!(),")
+print("_ => unreachable!(),")
 
 # named
 print("------NAMED------")
@@ -16,7 +16,7 @@ for x in data:
         continue
     kind = f'{x["type"]}'.replace("\\", "\\\\").replace('"', '\\"')
     print(f'"{kind}" => "{kind}",')
-print("_ => todo!(),")
+print("_ => unreachable!(),")
 
 
 # unamed
@@ -26,4 +26,4 @@ for x in data:
         continue
     kind = f'{x["type"]}'.replace("\\", "\\\\").replace('"', '\\"')
     print(f'"{kind}" => "{kind}",')
-print("_ => todo!(),")
+print("_ => unreachable!(),")
