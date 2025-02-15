@@ -1,6 +1,6 @@
 ---
 source: src/format.rs
-expression: "format_str(indoc!\n{\n    r#\"\n            if (a>b) {\n                1\n            } else {\n            \"foo\"\n            }\n            x <- if (T) 4\n            if (TRUE) #foo\n            10\n\n            if (foo <bar) {\n            lala\n            1} else if (1 >2) {2 \n            } else {3}\n        \"#\n})"
+expression: "format_str(indoc!\n{\n    r#\"\n            if (a>b) {\n                1\n            } else {\n            \"foo\"\n            }\n            x <- if (T) 4\n            if (TRUE) #foo\n            10\n\n            if (foo <bar) {\n            lala\n            1} else if (1 >2) {2\n            } else {3}\n        \"#\n}).unwrap()"
 ---
 if (a > b) {
   1
@@ -9,7 +9,9 @@ if (a > b) {
 }
 x <- if (T) 4
 # foo
-if (TRUE) 10
+if (TRUE) {
+  10
+}
 
 if (foo < bar) {
   lala

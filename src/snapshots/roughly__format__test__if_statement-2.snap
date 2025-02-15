@@ -1,0 +1,11 @@
+---
+source: src/format.rs
+expression: "format_str(indoc!\n{\n    r#\"\n            if (any(\n            sapply(foo)\n            )) stop(\"\")\n        \"#\n}).unwrap()"
+---
+if (
+  any(
+    sapply(foo)
+  )
+) {
+  stop("")
+}

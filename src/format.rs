@@ -1,5 +1,8 @@
 use {
-    crate::{cli, tree, utils},
+    crate::{
+        cli, tree,
+        utils::{self, indent_by},
+    },
     console::style,
     ignore::Walk,
     ropey::Rope,
@@ -155,6 +158,12 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
     };
     let field_optional = |field: &'static str| node.child_by_field_name(field);
     let get_raw = || rope.byte_slice(node.byte_range()).to_string();
+    let wrap_with_braces = |node: Node| -> Result<String, FormatError> {
+        Ok(format!(
+            "{{\n{}\n}}",
+            utils::indent_by(INDENT_BY, fmt(node)?)
+        ))
+    };
 
     // note: currently we don't traverse open&close -> they never reach these conditions
     if node.is_error() {
@@ -416,22 +425,45 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             let condition = field("condition")?;
             let consequence = field("consequence")?;
             let maybe_alternative = field_optional("alternative");
+            let is_multiline = node.start_position().row != node.end_position().row;
+            let is_multiline_condition =
+                condition.start_position().row != condition.end_position().row;
+            dbg!(
+                maybe_alternative.is_some(),
+                maybe_alternative.map(|x| x.to_sexp()).unwrap_or("".into())
+            );
 
-            let condition = fmt(condition)?;
-            let consequence = fmt(consequence)?;
-            match maybe_alternative {
-                Some(alternative) => {
-                    format!(
-                        "if ({}) {} else {}",
-                        condition,
-                        consequence,
-                        fmt(alternative)?
-                    )
+            format!(
+                "if ({}{}{}) {}{}{}",
+                if is_multiline_condition { "\n" } else { "" },
+                if is_multiline_condition {
+                    utils::indent_by(INDENT_BY, fmt(condition)?)
+                } else {
+                    fmt(condition)?
+                },
+                if is_multiline_condition { "\n" } else { "" },
+                if is_multiline && consequence.kind() != "braced_expression" {
+                    wrap_with_braces(consequence)?
+                } else {
+                    fmt(consequence)?
+                },
+                match maybe_alternative {
+                    Some(_) => " else ",
+                    None => "",
+                },
+                match maybe_alternative {
+                    Some(alternative) =>
+                        if is_multiline
+                            && alternative.kind() != "braced_expression"
+                            && alternative.kind() != "if_statement"
+                        {
+                            wrap_with_braces(alternative)?
+                        } else {
+                            fmt(alternative)?
+                        },
+                    None => "".into(),
                 }
-                None => {
-                    format!("if ({}) {}", condition, consequence,)
-                }
-            }
+            )
         }
         "integer" => get_raw(),
         "na" => get_raw(),
@@ -915,6 +947,26 @@ mod test {
             1} else if (1 >2) {2
             } else {3}
         "#};
+
+        // multiline condition
+        assert_fmt! {r#"
+            if (any(
+            sapply(foo)
+            )) stop("")
+        "#};
+
+        // if else if else
+        assert_fmt! {r#"
+            if (
+                TRUE
+            ) {foo
+             } else if (TRUE) {bar
+            } else baz
+        "#};
+
+        // TODO: condition is multiline but body ({}) is not (requires to pass down info)
+        // assert_fmt! {r#"
+        // "#};
     }
 
     #[test]
