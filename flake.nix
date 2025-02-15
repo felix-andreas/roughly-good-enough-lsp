@@ -46,7 +46,6 @@
             motd = "";
             depsBuildBuild = with pkgs; [
               pkgsCross.mingwW64.stdenv.cc
-              pkgsCross.mingwW64.stdenv.cc.cc.lib
               pkgsCross.mingwW64.windows.pthreads
             ];
             # TODO: fixes issue undefined reference to `ts_node_end_byte' in tree-sitter

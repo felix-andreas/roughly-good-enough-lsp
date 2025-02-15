@@ -171,7 +171,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
         });
     }
 
-    if node.is_extra() && node.kind() == "comment" {
+    if node.kind() == "comment" {
         let raw = get_raw();
         // reformat comments like #foo to # foo but keep #' foo
         let prefix = raw
@@ -183,12 +183,16 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             .skip_while(|c| c.is_ascii_punctuation())
             .collect::<String>();
         let content = content.trim_end();
-        let sep = if content.starts_with(char::is_whitespace) {
+        let sep = if content.starts_with(char::is_whitespace) || content.is_empty() {
             ""
         } else {
             " "
         };
         return Ok(format!("{prefix}{sep}{content}"));
+    }
+
+    if node.is_extra() {
+        log::warn!("node of kind {} is extra but is not a comment", node.kind());
     }
 
     if !node.is_named() {
@@ -1105,6 +1109,14 @@ mod test {
     }
 
     // SPECIAL CASES
+    #[test]
+    fn comments_trailing_whitespace() {
+        assert_eq!(
+            "#'\n#' foo\nx <- 1\n",
+            format_str("#' \n#' foo\nx<-1").unwrap(),
+        )
+    }
+
     #[test]
     fn switch_fallthrough() {
         assert_fmt! {r#"
