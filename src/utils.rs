@@ -2,6 +2,7 @@ use {
     ropey::Rope,
     std::borrow::Cow,
     tower_lsp::lsp_types::{Position, Range},
+    tree_sitter::{Node, TreeCursor},
 };
 
 pub fn position_to_index(position: Position, rope: &Rope) -> Result<usize, ropey::Error> {
@@ -72,4 +73,45 @@ where
     }
 
     output
+}
+
+pub fn format_node(node: &Node) -> String {
+    fn format_node_recursive(cursor: &mut TreeCursor, output: &mut String) {
+        let indent = "  ".repeat(cursor.depth() as usize);
+
+        if cursor.node().child_count() > 0 {
+            output.push('(');
+        }
+        output.push_str(cursor.node().kind());
+
+        if cursor.goto_first_child() {
+            loop {
+                output.push('\n');
+                output.push_str(&indent);
+                output.push_str("  ");
+
+                if let Some(field_name) = cursor.field_name() {
+                    output.push_str(field_name);
+                    output.push_str(": ");
+                }
+
+                format_node_recursive(cursor, output);
+
+                if !cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+
+            cursor.goto_parent();
+
+            output.push('\n');
+            output.push_str(&indent);
+            output.push(')');
+        }
+    }
+
+    let mut result = String::new();
+    let mut cursor = node.walk();
+    format_node_recursive(&mut cursor, &mut result);
+    result
 }

@@ -1,7 +1,7 @@
 use {
     crate::{
         cli, tree,
-        utils::{self, indent_by},
+        utils::{self},
     },
     console::style,
     ignore::Walk,
@@ -328,8 +328,8 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
         "braced_expression" => {
             handles_comments = true;
             let mut cursor = node.walk();
-            let open = node.child_by_field_name("open").unwrap();
-            let close = node.child_by_field_name("close").unwrap();
+            let is_multiline = node.start_position().row != node.end_position().row;
+
             let mut prev_end = None;
             let lines = node
                 .children(&mut cursor)
@@ -347,7 +347,11 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                         Some(prev_end) => {
                             format!(
                                 "{}{}",
-                                "\n".repeat(usize::min(2, child.start_position().row - prev_end)),
+                                "\n".repeat(usize::clamp(
+                                    child.start_position().row - prev_end,
+                                    1,
+                                    2
+                                )),
                                 line
                             )
                         }
@@ -360,8 +364,8 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
 
             if lines.is_empty() {
                 "{}".to_string()
-            } else if open.start_position().row == close.end_position().row {
-                format!("{{ {} }}", lines.join("; "))
+            } else if !is_multiline && lines.len() == 1 {
+                format!("{{ {} }}", lines.join(""))
             } else {
                 format!("{{\n{}\n}}", utils::indent_by(INDENT_BY, lines.join("")))
             }
@@ -734,7 +738,8 @@ mod test {
         let tree = tree::parse(text, None);
 
         // DEBUG
-        dbg!(tree.root_node().to_sexp());
+        // dbg!(tree.root_node().to_sexp());
+        // eprintln!("{}", utils::format_node(&tree.root_node()));
         format(tree.root_node(), &Rope::from_str(text))
     }
 
@@ -897,6 +902,16 @@ mod test {
                 x
             }
         "#};
+
+        // assert_fmt! {r#"
+        //     for (x in foo(
+        //     bar)) baz
+        // "#};
+        // TODO
+        // assert_fmt! {r#"
+        //     for (foo(
+        //     bar)) {baz}
+        // "#};
     }
 
     #[test]
@@ -1158,9 +1173,20 @@ mod test {
                 print(x)
             }
         "#};
+
+        // assert_fmt! {r#"
+        //     while(foo(
+        //     bar)) baz
+        // "#};
+
+        // TODO:
+        // assert_fmt! {r#"
+        //     while(foo(
+        //     bar)) {baz}
+        // "#};
     }
 
-    // SPECIAL CASES
+    // EDGE CASES
     #[test]
     fn comments_trailing_whitespace() {
         assert_eq!(
@@ -1196,6 +1222,16 @@ mod test {
         "#};
     }
 
+    #[test]
+    fn semicolons_in_function() {
+        assert_fmt! {r#"
+            function(x) {
+                names(foo[[x]]) <- bar; foo[x]
+            }
+        "#};
+    }
+
+    // LIBRARIES WITH SPECIAL FORMATTING
     #[test]
     fn data_table() {
         assert_fmt! {r#"
