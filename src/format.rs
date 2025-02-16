@@ -169,6 +169,13 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
             utils::indent_by_with_newlines(INDENT_BY, fmt(node)?)
         ))
     };
+    let is_fmt_skip_comment = |node: &Node| {
+        node.kind() == "comment"
+            && rope
+                .byte_slice(node.byte_range())
+                .to_string()
+                .contains("fmt: skip")
+    };
 
     // note: currently we don't traverse open&close -> they never reach these conditions
     if node.is_error() {
@@ -336,12 +343,35 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
             let is_multiline = node.start_position().row != node.end_position().row;
 
             let mut prev_end = None;
+            let mut fmt_skip = false;
             let lines = node
                 .children(&mut cursor)
                 .skip(1)
                 .take(node.child_count() - 2)
                 .map(|child| {
-                    let line = fmt(child)?;
+                    if child
+                        .next_sibling()
+                        .map(|sibling| {
+                            sibling.start_position().row == child.end_position().row
+                                && is_fmt_skip_comment(&sibling)
+                        })
+                        .unwrap_or(false)
+                    {
+                        fmt_skip = true;
+                    }
+                    let line = if fmt_skip {
+                        fmt_skip = false;
+                        rope.byte_slice(child.byte_range()).to_string()
+                    } else {
+                        fmt(child)?
+                    };
+                    if is_fmt_skip_comment(&child)
+                        && prev_end
+                            .map(|prev_end| child.start_position().row > prev_end)
+                            .unwrap_or(true)
+                    {
+                        fmt_skip = true;
+                    }
                     let result = match prev_end {
                         Some(prev_end)
                             if child.kind() == "comment"
@@ -613,15 +643,38 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
             handles_comments = true;
             let mut cursor = node.walk();
             let mut prev_end = None;
+            let mut fmt_skip = false;
             node.children(&mut cursor)
                 .map(|child| {
-                    let tmp = fmt(child)?;
+                    if child
+                        .next_sibling()
+                        .map(|sibling| {
+                            sibling.start_position().row == child.end_position().row
+                                && is_fmt_skip_comment(&sibling)
+                        })
+                        .unwrap_or(false)
+                    {
+                        fmt_skip = true;
+                    }
+                    let line = if fmt_skip {
+                        fmt_skip = false;
+                        rope.byte_slice(child.byte_range()).to_string()
+                    } else {
+                        fmt(child)?
+                    };
+                    if is_fmt_skip_comment(&child)
+                        && prev_end
+                            .map(|prev_end| child.start_position().row > prev_end)
+                            .unwrap_or(true)
+                    {
+                        fmt_skip = true;
+                    }
                     let result = match prev_end {
                         Some(prev_end)
                             if child.kind() == "comment"
                                 && prev_end == child.end_position().row =>
                         {
-                            format!(" {}", tmp)
+                            format!(" {}", line)
                         }
                         Some(prev_end) => {
                             format!(
@@ -631,10 +684,10 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
                                     1,
                                     2
                                 )),
-                                tmp
+                                line
                             )
                         }
-                        None => tmp,
+                        None => line,
                     };
                     prev_end = Some(child.end_position().row);
                     Ok(result)
@@ -657,6 +710,7 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
                             match char {
                                 '"' => formatted.push_str("\\\""),
                                 '\n' => formatted.push_str("\\n"),
+                                '\r' => formatted.push_str("\\r"),
                                 _ => formatted.push(char),
                             }
                         }
@@ -1362,6 +1416,42 @@ mod test {
 
         // uncomment in case we want to throw an error instead
         // assert!(matches!(result, FormatError::Missing { "fuc",  }) )
+    }
+
+    // DIRECTIVES
+    #[test]
+    fn fmt_skip() {
+        assert_fmt! {r#"
+        	# fmt: skip
+            foo <- c(1,2,
+            3)
+        "#};
+        assert_fmt! {r#"
+            foo <- c(1,2,
+            3)# fmt: skip
+            bar <- c(1,2,
+            3)
+        "#};
+        assert_fmt! {r#"
+            foo <- c(1,2,
+            3)
+            # fmt: skip
+            bar <- c(1,2,
+            3)
+        "#};
+        assert_fmt! {r#"
+        	{
+                foo <- c(1,2,
+                3)
+                # fmt: skip
+                bar <- c(1,2,
+                3)
+                foo <- c(1,2,
+                3) # fmt: skip
+                bar <- c(1,2,
+                3)
+            }
+        "#};
     }
 
     // FROM
