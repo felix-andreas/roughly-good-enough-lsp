@@ -160,8 +160,8 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
     let get_raw = || rope.byte_slice(node.byte_range()).to_string();
     let wrap_with_braces = |node: Node| -> Result<String, FormatError> {
         Ok(format!(
-            "{{\n{}\n}}",
-            utils::indent_by(INDENT_BY, fmt(node)?)
+            "{{{}}}",
+            utils::indent_by_with_newlines(INDENT_BY, fmt(node)?)
         ))
     };
 
@@ -367,7 +367,10 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             } else if !is_multiline && lines.len() == 1 {
                 format!("{{ {} }}", lines.join(""))
             } else {
-                format!("{{\n{}\n}}", utils::indent_by(INDENT_BY, lines.join("")))
+                format!(
+                    "{{{}}}",
+                    utils::indent_by_with_newlines(INDENT_BY, lines.join(""))
+                )
             }
         }
         "call" => {
@@ -376,14 +379,14 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
 
             let function_fmt = fmt(function)?;
             let arguments_fmt = fmt(arguments)?;
-            if arguments.start_position().row == arguments.end_position().row {
-                format!("{function_fmt}({arguments_fmt})",)
-            } else {
-                format!(
-                    "{function_fmt}(\n{}\n)",
-                    utils::indent_by(INDENT_BY, arguments_fmt)
-                )
-            }
+            format!(
+                "{function_fmt}({})",
+                if arguments.start_position().row == arguments.end_position().row {
+                    arguments_fmt
+                } else {
+                    utils::indent_by_with_newlines(INDENT_BY, arguments_fmt)
+                }
+            )
         }
         "complex" => get_raw(),
         "extract_operator" => {
@@ -397,11 +400,16 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
         }
         "float" => get_raw(),
         "for_statement" => {
+            let body = field("body")?;
             format!(
                 "for ({} in {}) {}",
                 fmt(field("variable")?)?,
                 fmt(field("sequence")?)?,
-                fmt(field("body")?)?
+                if body.kind() != "braced_expression" {
+                    wrap_with_braces(body)?
+                } else {
+                    fmt(body)?
+                },
             )
         }
         "function_definition" => {
@@ -409,21 +417,19 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             let parameters = field("parameters")?;
             let body = field("body")?;
 
-            let name_fmt = fmt(name)?;
-            let body_fmt = fmt(body)?;
             let parameters_fmt = fmt(parameters)?;
-            if parameters_fmt.is_empty()
-                || parameters.start_position().row == parameters.end_position().row
-            {
-                format!("{}({}) {}", name_fmt, parameters_fmt, body_fmt)
-            } else {
-                format!(
-                    "{}(\n{}\n) {}",
-                    name_fmt,
-                    utils::indent_by(INDENT_BY, parameters_fmt),
-                    body_fmt
-                )
-            }
+            format!(
+                "{}({}) {}",
+                fmt(name)?,
+                if parameters_fmt.is_empty()
+                    || parameters.start_position().row == parameters.end_position().row
+                {
+                    parameters_fmt
+                } else {
+                    utils::indent_by_with_newlines(INDENT_BY, parameters_fmt)
+                },
+                fmt(body)?
+            )
         }
         "if_statement" => {
             let condition = field("condition")?;
@@ -432,20 +438,14 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             let is_multiline = node.start_position().row != node.end_position().row;
             let is_multiline_condition =
                 condition.start_position().row != condition.end_position().row;
-            dbg!(
-                maybe_alternative.is_some(),
-                maybe_alternative.map(|x| x.to_sexp()).unwrap_or("".into())
-            );
 
             format!(
-                "if ({}{}{}) {}{}{}",
-                if is_multiline_condition { "\n" } else { "" },
+                "if ({}) {}{}{}",
                 if is_multiline_condition {
-                    utils::indent_by(INDENT_BY, fmt(condition)?)
+                    utils::indent_by_with_newlines(INDENT_BY, fmt(condition)?)
                 } else {
                     fmt(condition)?
                 },
-                if is_multiline_condition { "\n" } else { "" },
                 if is_multiline && consequence.kind() != "braced_expression" {
                     wrap_with_braces(consequence)?
                 } else {
@@ -588,10 +588,15 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
 
             if lines.is_empty() {
                 "()".to_string()
-            } else if open.start_position().row == close.end_position().row {
-                format!("({})", lines.join(""))
             } else {
-                format!("(\n{}\n)", utils::indent_by(INDENT_BY, lines.join("")))
+                format!(
+                    "({})",
+                    if open.start_position().row == close.end_position().row {
+                        lines.join("")
+                    } else {
+                        utils::indent_by_with_newlines(INDENT_BY, lines.join(""))
+                    }
+                )
             }
         }
         "program" => {
@@ -651,14 +656,14 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
 
             let function_fmt = fmt(function)?;
             let arguments_fmt = fmt(arguments)?;
-            if arguments.start_position().row == arguments.end_position().row {
-                format!("{function_fmt}[{arguments_fmt}]",)
-            } else {
-                format!(
-                    "{function_fmt}[\n{}\n]",
-                    utils::indent_by(INDENT_BY, arguments_fmt)
-                )
-            }
+            format!(
+                "{function_fmt}[{}]",
+                if arguments.start_position().row == arguments.end_position().row {
+                    arguments_fmt
+                } else {
+                    utils::indent_by_with_newlines(INDENT_BY, arguments_fmt)
+                }
+            )
         }
         "subset2" => {
             let function = field("function")?;
@@ -666,14 +671,14 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
 
             let function_fmt = fmt(function)?;
             let arguments_fmt = fmt(arguments)?;
-            if arguments.start_position().row == arguments.end_position().row {
-                format!("{function_fmt}[[{arguments_fmt}]]",)
-            } else {
-                format!(
-                    "{function_fmt}[[\n{}\n]]",
-                    utils::indent_by(INDENT_BY, arguments_fmt)
-                )
-            }
+            format!(
+                "{function_fmt}[[{}]]",
+                if arguments.start_position().row == arguments.end_position().row {
+                    arguments_fmt
+                } else {
+                    utils::indent_by_with_newlines(INDENT_BY, arguments_fmt)
+                }
+            )
         }
         "unary_operator" => {
             let operator = field("operator")?;
@@ -681,10 +686,24 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             format!("{}{spacing}{}", fmt(operator)?, fmt(field("rhs")?)?)
         }
         "while_statement" => {
+            let condition = field("condition")?;
+            let body = field("body")?;
+            let is_multiline = node.start_position().row != node.end_position().row;
+            let is_multiline_condition =
+                condition.start_position().row != condition.end_position().row;
+
             format!(
                 "while ({}) {}",
-                fmt(field("condition")?)?,
-                fmt(field("body")?)?
+                if is_multiline_condition {
+                    utils::indent_by_with_newlines(INDENT_BY, fmt(condition)?)
+                } else {
+                    fmt(condition)?
+                },
+                if is_multiline && body.kind() != "braced_expression" {
+                    wrap_with_braces(body)?
+                } else {
+                    fmt(body)?
+                },
             )
         }
         // SIMPLE
@@ -903,10 +922,11 @@ mod test {
             }
         "#};
 
-        // assert_fmt! {r#"
-        //     for (x in foo(
-        //     bar)) baz
-        // "#};
+        assert_fmt! {r#"
+            for (x in foo(
+            bar)) baz
+        "#};
+
         // TODO
         // assert_fmt! {r#"
         //     for (foo(
@@ -943,6 +963,12 @@ mod test {
                 bar = 3 #bar
             ) {}
         "#};
+
+        // TODO: make this work
+        // assert_fmt! {r#"
+        //     function (a,
+        //     b) {baz}
+        // "#};
     }
 
     #[test]
@@ -1174,10 +1200,10 @@ mod test {
             }
         "#};
 
-        // assert_fmt! {r#"
-        //     while(foo(
-        //     bar)) baz
-        // "#};
+        assert_fmt! {r#"
+            while(foo(
+            bar)) baz
+        "#};
 
         // TODO:
         // assert_fmt! {r#"
@@ -1275,7 +1301,6 @@ mod test {
         let result = format_str(indoc! {r#"
             function
         "#});
-        dbg!(&result);
 
         let Err(FormatError::SyntaxError { kind, raw }) = result else {
             panic!()

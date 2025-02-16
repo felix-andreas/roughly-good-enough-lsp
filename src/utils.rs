@@ -43,10 +43,17 @@ pub fn indent_by<'a, S>(number_of_spaces: usize, input: S) -> String
 where
     S: Into<Cow<'a, str>>,
 {
-    indent(" ".repeat(number_of_spaces), input)
+    indent(" ".repeat(number_of_spaces), input, false)
 }
 
-fn indent<'a, S, T>(prefix: S, input: T) -> String
+pub fn indent_by_with_newlines<'a, S>(number_of_spaces: usize, input: S) -> String
+where
+    S: Into<Cow<'a, str>>,
+{
+    indent(" ".repeat(number_of_spaces), input, true)
+}
+
+fn indent<'a, S, T>(prefix: S, input: T, newlines: bool) -> String
 where
     S: Into<Cow<'a, str>>,
     T: Into<Cow<'a, str>>,
@@ -57,7 +64,7 @@ where
     let mut output = String::with_capacity(length + length / 2);
 
     for (i, line) in input.lines().enumerate() {
-        if i > 0 {
+        if i > 0 || newlines {
             output.push('\n');
         }
 
@@ -68,7 +75,7 @@ where
         output.push_str(line);
     }
 
-    if input.ends_with('\n') {
+    if input.ends_with('\n') || newlines {
         output.push('\n');
     }
 
