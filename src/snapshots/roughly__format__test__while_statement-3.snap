@@ -1,0 +1,11 @@
+---
+source: src/format.rs
+expression: "format_str(indoc!\n{ r#\"\n            while(foo(\n            bar)) {baz}\n        \"# }).unwrap()"
+---
+while (
+  foo(
+    bar
+  )
+) {
+  baz
+}

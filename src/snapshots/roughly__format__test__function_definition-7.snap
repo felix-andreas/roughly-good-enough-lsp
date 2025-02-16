@@ -1,0 +1,10 @@
+---
+source: src/format.rs
+expression: "format_str(indoc!\n{ r#\"\n            function (a, \n            b) baz\n        \"# }).unwrap()"
+---
+function(
+  a,
+  b
+) {
+  baz
+}

@@ -148,10 +148,15 @@ pub enum FormatError {
 }
 
 pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
+    format_rec(node, rope, false)
+}
+
+fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, FormatError> {
     const INDENT_BY: usize = 2;
 
     let kind = node.kind();
-    let fmt = |node: Node| format(node, rope);
+    let fmt = |node: Node| format_rec(node, rope, false);
+    let fmt_multiline = |node: Node, make_multiline: bool| format_rec(node, rope, make_multiline);
     let field = |field: &'static str| {
         node.child_by_field_name(field)
             .ok_or(FormatError::MissingField { kind, field })
@@ -364,13 +369,13 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
 
             if lines.is_empty() {
                 "{}".to_string()
-            } else if !is_multiline && lines.len() == 1 {
-                format!("{{ {} }}", lines.join(""))
-            } else {
+            } else if is_multiline || make_multiline || lines.len() > 1 {
                 format!(
                     "{{{}}}",
                     utils::indent_by_with_newlines(INDENT_BY, lines.join(""))
                 )
+            } else {
+                format!("{{ {} }}", lines.join(""))
             }
         }
         "call" => {
@@ -408,7 +413,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                 if body.kind() != "braced_expression" {
                     wrap_with_braces(body)?
                 } else {
-                    fmt(body)?
+                    fmt_multiline(body, true)?
                 },
             )
         }
@@ -416,6 +421,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
             let name = field("name")?;
             let parameters = field("parameters")?;
             let body = field("body")?;
+            let is_multiline = node.start_position().row != node.end_position().row;
 
             let parameters_fmt = fmt(parameters)?;
             format!(
@@ -428,7 +434,11 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                 } else {
                     utils::indent_by_with_newlines(INDENT_BY, parameters_fmt)
                 },
-                fmt(body)?
+                if is_multiline && body.kind() != "braced_expression" {
+                    wrap_with_braces(body)?
+                } else {
+                    fmt_multiline(body, is_multiline)?
+                },
             )
         }
         "if_statement" => {
@@ -449,7 +459,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                 if is_multiline && consequence.kind() != "braced_expression" {
                     wrap_with_braces(consequence)?
                 } else {
-                    fmt(consequence)?
+                    fmt_multiline(consequence, is_multiline)?
                 },
                 match maybe_alternative {
                     Some(_) => " else ",
@@ -463,7 +473,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                         {
                             wrap_with_braces(alternative)?
                         } else {
-                            fmt(alternative)?
+                            fmt_multiline(alternative, is_multiline)?
                         },
                     None => "".into(),
                 }
@@ -633,7 +643,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                 .collect::<Result<String, FormatError>>()?
         }
         "repeat_statement" => {
-            format!("repeat {}", fmt(field("body")?)?)
+            format!("repeat {}", fmt_multiline(field("body")?, true)?)
         }
         "string" => {
             let maybe_string_content = field_optional("content");
@@ -688,7 +698,6 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
         "while_statement" => {
             let condition = field("condition")?;
             let body = field("body")?;
-            let is_multiline = node.start_position().row != node.end_position().row;
             let is_multiline_condition =
                 condition.start_position().row != condition.end_position().row;
 
@@ -699,10 +708,10 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
                 } else {
                     fmt(condition)?
                 },
-                if is_multiline && body.kind() != "braced_expression" {
-                    wrap_with_braces(body)?
+                if body.kind() == "braced_expression" {
+                    fmt_multiline(body, true)?
                 } else {
-                    fmt(body)?
+                    wrap_with_braces(body)?
                 },
             )
         }
@@ -927,11 +936,11 @@ mod test {
             bar)) baz
         "#};
 
-        // TODO
-        // assert_fmt! {r#"
-        //     for (foo(
-        //     bar)) {baz}
-        // "#};
+        assert_fmt! {r#"
+            for (x in foo( bar)) { baz }
+            for (x in
+            foo( bar)) { baz }
+        "#};
     }
 
     #[test]
@@ -963,12 +972,14 @@ mod test {
                 bar = 3 #bar
             ) {}
         "#};
-
-        // TODO: make this work
-        // assert_fmt! {r#"
-        //     function (a,
-        //     b) {baz}
-        // "#};
+        assert_fmt! {r#"
+            function (a, 
+            b) baz
+        "#};
+        assert_fmt! {r#"
+            function (a,
+            b) {baz}
+        "#};
     }
 
     #[test]
@@ -1005,9 +1016,17 @@ mod test {
             } else baz
         "#};
 
-        // TODO: condition is multiline but body ({}) is not (requires to pass down info)
-        // assert_fmt! {r#"
-        // "#};
+        assert_fmt! {r#"
+            if (foo) {bar}
+            if (foo) {bar} else {baz}
+            if (foo) bar else {baz}
+            if (
+            foo) {bar}
+            if (
+            foo) {bar}
+            if (foo)
+                {bar}
+        "#};
     }
 
     #[test]
@@ -1205,11 +1224,10 @@ mod test {
             bar)) baz
         "#};
 
-        // TODO:
-        // assert_fmt! {r#"
-        //     while(foo(
-        //     bar)) {baz}
-        // "#};
+        assert_fmt! {r#"
+            while(foo(
+            bar)) {baz}
+        "#};
     }
 
     // EDGE CASES
