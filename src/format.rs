@@ -650,10 +650,18 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
             match maybe_string_content {
                 Some(string_content) => {
                     let content = fmt(string_content)?;
-                    if content.contains("\"") {
-                        get_raw()
-                    } else {
-                        format!("\"{}\"", fmt(string_content)?)
+                    {
+                        let mut formatted = String::with_capacity(content.len() + 2);
+                        formatted.push('"');
+                        for char in content.chars() {
+                            match char {
+                                '"' => formatted.push_str("\\\""),
+                                '\n' => formatted.push_str("\\n"),
+                                _ => formatted.push(char),
+                            }
+                        }
+                        formatted.push('"');
+                        formatted
                     }
                 }
                 None => "\"\"".to_string(),
@@ -1122,6 +1130,17 @@ mod test {
             }
             repeat #foo
             { }
+        "#};
+    }
+
+    #[test]
+    fn string() {
+        // assert_fmt! {r#"
+        //     "foo
+        //         bar"
+        // "#};
+        assert_fmt! {r#"
+            '"foo"'
         "#};
     }
 
