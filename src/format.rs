@@ -1005,6 +1005,10 @@ mod test {
             if (any(
             sapply(foo)
             )) stop("")
+            if ( !foo ||
+            !bar ||
+                !baz()
+            ) stop("")
         "#};
 
         // if else if else
