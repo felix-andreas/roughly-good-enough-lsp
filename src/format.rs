@@ -475,7 +475,8 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
             let condition = field("condition")?;
             let consequence = field("consequence")?;
             let maybe_alternative = field_optional("alternative");
-            let is_multiline = node.start_position().row != node.end_position().row;
+            let is_multiline =
+                make_multiline || node.start_position().row != node.end_position().row;
             let is_multiline_condition =
                 condition.start_position().row != condition.end_position().row;
 
@@ -1092,6 +1093,31 @@ mod test {
             foo) {bar}
             if (foo)
                 {bar}
+        "#};
+
+        // make
+        assert_fmt! {r#"
+            if (foo) {
+                bar
+            } else if (baz) { qux } else corge
+
+            if (foo)
+                {bar}
+            if (foo) {
+                bar
+            } else if (baz) {
+                qux
+            } else if (quux) { corge }
+        "#};
+
+        // make_multiline is not transitiv (doesn't break single line if-else)
+        assert_fmt! {r#"
+        	function()
+                if (foo) bar else baz
+
+        	function() {
+                if (foo) bar else baz
+            }
         "#};
     }
 
