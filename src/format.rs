@@ -6,7 +6,7 @@ use {
     console::style,
     ignore::Walk,
     ropey::Rope,
-    std::path::PathBuf,
+    std::{path::PathBuf, str::Chars},
     thiserror::Error,
     tree_sitter::Node,
 };
@@ -194,22 +194,31 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
 
     if node.kind() == "comment" {
         let raw = get_raw();
+        let raw = raw.trim_end();
+
+        let mut chars = raw.chars();
+
+        let get_rest = |chars: Chars| chars.collect::<String>();
+        let _ = chars.next();
         // reformat comments like #foo to # foo but keep #' foo
-        let prefix = raw
-            .chars()
-            .take_while(|c| c.is_ascii_punctuation())
-            .collect::<String>();
-        let content = raw
-            .chars()
-            .skip_while(|c| c.is_ascii_punctuation())
-            .collect::<String>();
-        let content = content.trim_end();
-        let sep = if content.starts_with(char::is_whitespace) || content.is_empty() {
-            ""
-        } else {
-            " "
-        };
-        return Ok(format!("{prefix}{sep}{content}"));
+        return Ok(match chars.next() {
+            Some('\'') => match chars.next() {
+                Some(' ') => raw.into(),
+                Some(other) => {
+                    let rest = get_rest(chars);
+                    // avoid formatting #'foo'
+                    if rest.contains('\'') {
+                        raw.into()
+                    } else {
+                        format!("#' {other}{}", rest)
+                    }
+                }
+                None => "#'".into(),
+            },
+            Some(' ' | '#') => raw.into(),
+            Some(other) => format!("# {other}{}", get_rest(chars)),
+            None => "#".into(),
+        });
     }
 
     if node.is_extra() {
@@ -1335,7 +1344,24 @@ mod test {
 
     // EDGE CASES
     #[test]
-    fn comments_trailing_whitespace() {
+    fn comment_formatting() {
+        assert_fmt! {r#"
+            #foo
+            ##foo
+            ## foo
+            ### foo
+            # # foo
+            #    foo
+            #'foo
+            #
+            # #
+            #'@param 
+            #' @param
+            #"foo"
+            #'foo'
+            #'foo
+        "#};
+
         assert_eq!(
             "#'\n#' foo\nx <- 1\n",
             format_str("#' \n#' foo\nx<-1").unwrap(),
@@ -1351,21 +1377,6 @@ mod test {
                 z = ,
                 3
             )
-        "#};
-    }
-
-    #[test]
-    fn comment_formatting() {
-        assert_fmt! {r#"
-           #foo
-           ##foo
-           ## foo
-           ### foo
-           # # foo
-           #    foo
-           #'foo
-           #
-           # #
         "#};
     }
 
