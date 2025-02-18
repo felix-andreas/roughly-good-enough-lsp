@@ -22,7 +22,7 @@ pub async fn run() {
 
     log::info!("starting language server ... listing for stdin");
     log::info!("for more info run 'roughly --help'");
-    Server::new(stdin, stdout, socket).serve(service).await;
+    Server::new(stdin, stdout, socket).serve(service).await
 }
 
 #[derive(Debug)]

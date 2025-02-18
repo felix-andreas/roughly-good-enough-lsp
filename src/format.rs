@@ -11,14 +11,14 @@ use {
     tree_sitter::Node,
 };
 
-pub fn run(maybe_files: Option<&[PathBuf]>, check: bool, diff: bool) -> bool {
+pub fn run(maybe_files: Option<&[PathBuf]>, check: bool, diff: bool) -> Result<(), ()> {
     let root: Vec<PathBuf> = vec![".".into()];
     let files = maybe_files.unwrap_or(&root);
 
     let mut n_files = 0;
     let mut n_unformatted = 0;
     let mut n_errors = 0;
-    files
+    for path in files
         .iter()
         .flat_map(Walk::new)
         .filter_map(|e| e.ok())
@@ -28,35 +28,42 @@ pub fn run(maybe_files: Option<&[PathBuf]>, check: bool, diff: bool) -> bool {
                 .map(|ext| ext == "R" || ext == "r")
                 .unwrap_or(false)
         })
-        .for_each(|path| {
-            n_files += 1;
-            let old = std::fs::read_to_string(&path).unwrap();
-            let tree = tree::parse(&old, None);
-            let rope = Rope::from_str(&old);
-            let new = match format(tree.root_node(), &rope) {
-                Ok(new) => new,
-                Err(_) => {
-                    n_errors += 1;
-                    cli::error(&format!("failed to format: {}", path.display()));
-                    return;
-                }
-            };
-            if old != new {
-                n_unformatted += 1;
-                if diff {
-                    eprintln!("Diff in {}:", path.display());
-                    print_diff(&old, &new);
-                } else if check {
-                    eprintln!("Would reformat: {}", style(path.display()).bold());
-                } else if std::fs::write(&path, new).is_err() {
-                    cli::error(&format!("failed to write to file: {}", path.display()));
-                }
+    {
+        n_files += 1;
+        let old = match std::fs::read_to_string(&path) {
+            Ok(old) => old,
+            Err(err) => {
+                n_errors += 1;
+                cli::error(&format!("failed to format: {}\n{}", path.display(), err));
+                continue;
             }
-        });
+        };
+        let tree = tree::parse(&old, None);
+        let rope = Rope::from_str(&old);
+        let new = match format(tree.root_node(), &rope) {
+            Ok(new) => new,
+            Err(err) => {
+                n_errors += 1;
+                cli::error(&format!("failed to format: {}\n{}", path.display(), err));
+                continue;
+            }
+        };
+        if old != new {
+            n_unformatted += 1;
+            if diff {
+                eprintln!("Diff in {}:", path.display());
+                print_diff(&old, &new);
+            } else if check {
+                eprintln!("Would reformat: {}", style(path.display()).bold());
+            } else if std::fs::write(&path, new).is_err() {
+                cli::error(&format!("failed to write to file: {}", path.display()));
+            }
+        }
+    }
 
     if n_files == 0 {
         cli::warning("No R files found under the given path(s)");
-        return true;
+        return Ok(());
     }
 
     let (first, second) = if check {
@@ -77,7 +84,11 @@ pub fn run(maybe_files: Option<&[PathBuf]>, check: bool, diff: bool) -> bool {
         },
     );
 
-    n_unformatted == 0 && n_errors == 0
+    if n_unformatted == 0 && n_errors == 0 {
+        Ok(())
+    } else {
+        Err(())
+    }
 }
 
 // from: https://github.com/mitsuhiko/similar/blob/main/examples/terminal-inline.rs

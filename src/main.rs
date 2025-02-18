@@ -1,6 +1,6 @@
 use {
     clap::{Parser, Subcommand},
-    roughly::{format, lsp},
+    roughly::{cli, dev, format, lsp},
     std::{path::PathBuf, process::ExitCode},
 };
 
@@ -8,41 +8,43 @@ use {
 async fn main() -> ExitCode {
     env_logger::init();
 
-    let exit = match Cli::parse().command {
+    match Cli::parse().command {
         None => {
             lsp::run().await;
-            true
+            ExitCode::SUCCESS
         }
         Some(command) => match command {
-            Command::Fmt {
-                files,
-                check,
-                diff,
-                help: _,
-            } => format::run(files.as_deref(), check, diff),
-            Command::Lint { help: _ } => todo!(),
-            Command::Lsp { help: _ } => {
-                lsp::run().await;
-                true
+            Command::Fmt { files, check, diff } => {
+                match format::run(files.as_deref(), check, diff) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(()) => ExitCode::FAILURE,
+                }
             }
+            Command::Lint => todo!(),
+            Command::Lsp => {
+                lsp::run().await;
+                ExitCode::SUCCESS
+            }
+            Command::Dev(dev) => match dev {
+                Dev::Sexp { path } => match dev::sexp(&path) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(err) => {
+                        cli::error(&err.to_string());
+                        ExitCode::FAILURE
+                    }
+                },
+            },
         },
-    };
-
-    if exit {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
     }
 }
 
 #[derive(Parser)]
-#[clap(disable_help_flag = true)]
 #[command(version)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
-    #[clap(long, action = clap::ArgAction::HelpLong)]
-    help: Option<bool>,
+    // #[clap(long, action = clap::ArgAction::HelpLong)]
+    // help: Option<bool>,
     /// Ignored ... here only to please VS Code
     #[clap(long, default_value_t = true)]
     stdio: bool,
@@ -60,17 +62,18 @@ enum Command {
         /// Avoid writing any formatted files back; instead, exit with a non-zero status code and the difference between the current file and how the formatted file would look like
         #[clap(long, default_value_t = false)]
         diff: bool,
-        #[arg(long , action = clap::ArgAction::HelpLong)]
-        help: Option<bool>,
     },
     /// Lint the given files or directories
-    Lint {
-        #[arg(long , action = clap::ArgAction::HelpLong)]
-        help: Option<bool>,
-    },
+    Lint,
     /// Run the language server
-    Lsp {
-        #[arg(long , action = clap::ArgAction::HelpLong)]
-        help: Option<bool>,
-    },
+    Lsp,
+    /// Collection of useful commands
+    #[command(subcommand)]
+    Dev(Dev),
+}
+
+#[derive(Debug, Subcommand)]
+enum Dev {
+    /// Print the Sexp for the given file
+    Sexp { path: PathBuf },
 }
