@@ -167,6 +167,18 @@ enum LineEnding {
     Crlf,
 }
 
+enum Line {
+    Single(String),
+    Multi(String, Vec<String>),
+}
+
+enum Indent {
+    Auto(usize),
+    Keep(usize),
+}
+
+const INDENT_BY: usize = 2;
+
 pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
     let line_ending = rope
         .chars()
@@ -180,7 +192,23 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
         })
         .unwrap_or(LineEnding::Lf);
 
-    format_rec(node, rope, false, line_ending)
+    let lines = format_rec(node, rope, false, line_ending)?;
+
+    let line_ending = match line_ending {
+        LineEnding::Lf => "\n",
+        LineEnding::Crlf => "\r\n",
+    };
+
+    Ok(lines
+        .into_iter()
+        .map(|(indent, content)| {
+            let amount = match indent {
+                Indent::Auto(n) => n,
+                Indent::Keep(n) => n,
+            };
+            format!("{}{content}{line_ending}", " ".repeat(amount * INDENT_BY))
+        })
+        .collect::<String>())
 }
 
 fn format_rec(
@@ -188,9 +216,7 @@ fn format_rec(
     rope: &Rope,
     make_multiline: bool,
     line_ending: LineEnding,
-) -> Result<String, FormatError> {
-    const INDENT_BY: usize = 2;
-
+) -> Result<(Indent, Line), FormatError> {
     let kind = node.kind();
     let fmt = |node: Node| format_rec(node, rope, false, line_ending);
     let fmt_multiline =
@@ -201,11 +227,18 @@ fn format_rec(
     };
     let field_optional = |field: &'static str| node.child_by_field_name(field);
     let get_raw = || rope.byte_slice(node.byte_range()).to_string();
-    let wrap_with_braces = |node: Node| -> Result<String, FormatError> {
-        Ok(format!(
-            "{{{}}}",
-            utils::indent_by_with_newlines(INDENT_BY, fmt(node)?)
-        ))
+    let indent_lines = |(indent, line): (Indent, Line)| -> (Indent, Line) {
+        match indent {
+            Indent::Auto(n) => (Indent::Auto(n + 1), line),
+            Indent::Keep(_) => (indent, line),
+        }
+    };
+    let wrap_with_braces = |node: Node| -> Result<Vec<(Indent, Line)>, FormatError> {
+        let lines = fmt(node)?;
+        let mut result = vec![(Indent::Auto(0), Line::Single("{".into()))];
+        result.push(indent_lines(lines));
+        result.push((Indent::Auto(0), Line::Single("}".into())));
+        Ok(result)
     };
     let is_fmt_skip_comment = |node: &Node| {
         node.kind() == "comment"
@@ -213,6 +246,28 @@ fn format_rec(
                 .byte_slice(node.byte_range())
                 .to_string()
                 .contains("fmt: skip")
+    };
+    fn auto(string: String) -> (Indent, Line) {
+        (Indent::Auto(0), Line::Single(string))
+    }
+    fn keep(string: String, n: usize) -> (Indent, Line) {
+        (Indent::Keep(n), Line::Single(string))
+    }
+    let join = |a: Line, sep: &str, b: Line| -> Line {
+        match (a, b) {
+            (Line::Single(a), Line::Single(b)) => Line::Single(format!("{a}{sep}{b})")),
+            (Line::Single(a), Line::Multi(b, other)) => Line::Multi(format!("{a}{sep}{b})"), other),
+            (Line::Multi(a, other), Line::Single(b)) => {
+                other.last_mut().unwrap_or(&mut a).push_str(sep);
+                Line::Multi(a, other)
+            }
+            (Line::Multi(a, other_a), Line::Multi(b, other_b)) => {
+                other_a.last_mut().unwrap_or(&mut a).push_str(sep);
+                other_a.push(b);
+                other_a.extend(other_b);
+                Line::Multi(a, other_a)
+            }
+        }
     };
     let line_ending = match line_ending {
         LineEnding::Lf => "\n",
@@ -243,7 +298,7 @@ fn format_rec(
         let get_rest = |chars: Chars| chars.collect::<String>();
         let _ = chars.next();
         // reformat comments like #foo to # foo but keep #' foo
-        return Ok(match chars.next() {
+        return Ok(auto(match chars.next() {
             Some('\'') => match chars.next() {
                 Some(' ') => raw.into(),
                 Some(other) => {
@@ -260,7 +315,7 @@ fn format_rec(
             Some(' ' | '#') => raw.into(),
             Some(other) => format!("# {other}{}", get_rest(chars)),
             None => "#".into(),
-        });
+        }));
     }
 
     if node.is_extra() {
@@ -268,7 +323,7 @@ fn format_rec(
     }
 
     if !node.is_named() {
-        return Ok(get_raw());
+        return Ok(auto(get_raw()));
     }
 
     let mut handles_comments = false;
@@ -283,7 +338,8 @@ fn format_rec(
             let has_equal = node.children(&mut cursor).any(|node| node.kind() == "=");
 
             match (maybe_name, maybe_value) {
-                (Some(name), Some(value)) => format!("{} = {}", fmt(name)?, fmt(value)?),
+                (Some(name), Some(value)) => join(fmt(name)?, " = ", fmt(value)?),
+                // format!("{} = {}", fmt(name)?, fmt(value)?),
                 (None, Some(value)) => (fmt(value)?).to_string(),
                 (Some(name), None) if has_equal => format!("{} = ", fmt(name)?),
                 (Some(name), None) => (fmt(name)?).to_string(),
@@ -791,7 +847,7 @@ fn format_rec(
                     prev_end = Some(child.end_position().row);
                     Ok(result)
                 })
-                .chain(std::iter::once(Ok(line_ending.into())))
+                .chain(std::iter::once(Ok(line_ending.into()))), sep: &str
                 .collect::<Result<String, FormatError>>()?
         }
         "repeat_statement" => {
