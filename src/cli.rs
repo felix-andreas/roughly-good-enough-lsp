@@ -1,5 +1,9 @@
 use console::style;
 
+pub fn info(message: &str) {
+    eprintln!("{}", style(message).bold(),);
+}
+
 pub fn warning(message: &str) {
     eprintln!(
         "{} {}",

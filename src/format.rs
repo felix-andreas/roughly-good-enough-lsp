@@ -35,7 +35,8 @@ pub fn run(maybe_files: Option<&[PathBuf]>, check: bool, diff: bool) -> Result<(
             Ok(old) => old,
             Err(err) => {
                 n_errors += 1;
-                cli::error(&format!("failed to format: {}\n{}", path.display(), err));
+                cli::error(&format!("failed to format: {}", path.display()));
+                eprintln!("{err}");
                 continue;
             }
         };
@@ -45,7 +46,8 @@ pub fn run(maybe_files: Option<&[PathBuf]>, check: bool, diff: bool) -> Result<(
             Ok(new) => new,
             Err(err) => {
                 n_errors += 1;
-                cli::error(&format!("failed to format: {}\n{}", path.display(), err));
+                cli::error(&format!("failed to format: {}", path.display()));
+                eprintln!("{err}");
                 continue;
             }
         };
@@ -73,7 +75,7 @@ pub fn run(maybe_files: Option<&[PathBuf]>, check: bool, diff: bool) -> Result<(
         ("reformatted", "left unchanged")
     };
 
-    eprintln!(
+    cli::info(&format!(
         "{} file{} {first}, {} file{} {second}",
         n_unformatted,
         if n_unformatted == 1 { "" } else { "s" },
@@ -82,8 +84,8 @@ pub fn run(maybe_files: Option<&[PathBuf]>, check: bool, diff: bool) -> Result<(
             ""
         } else {
             "s"
-        },
-    );
+        }
+    ));
 
     if n_unformatted == 0 && n_errors == 0 {
         Ok(())
@@ -220,14 +222,14 @@ fn format_rec(
     // note: currently we don't traverse open&close -> they never reach these conditions
     if node.is_error() {
         return Err(FormatError::SyntaxError {
-            kind: node.parent().unwrap().kind(),
+            kind: node.parent().map(|node| node.kind()).unwrap_or("no parent"),
             raw: get_raw(),
         });
     }
 
     if node.is_missing() {
         return Err(FormatError::Missing {
-            kind: node.parent().unwrap().kind(),
+            kind: node.parent().map(|node| node.kind()).unwrap_or("no parent"),
             raw: get_raw(),
         });
     }
@@ -647,8 +649,6 @@ fn format_rec(
         "parenthesized_expression" => {
             handles_comments = true;
             let mut cursor = node.walk();
-            let open = node.child_by_field_name("open").unwrap();
-            let close = node.child_by_field_name("close").unwrap();
 
             let mut prev_end = None;
             let lines = node
@@ -684,7 +684,7 @@ fn format_rec(
             } else {
                 format!(
                     "({})",
-                    if open.start_position().row == close.end_position().row {
+                    if node.start_position().row == node.end_position().row {
                         lines.join("")
                     } else {
                         utils::indent_by_with_newlines(INDENT_BY, lines.join(""))
