@@ -292,20 +292,43 @@ fn format_rec(
         }
         "arguments" => {
             handles_comments = true;
-            let mut cursor = node.walk();
-            let open = field("open")?;
-            let close = field("close")?;
-            let mut maybe_prev_node = None;
-            let is_multiline = open.start_position().row != close.end_position().row;
+            let is_multiline = node.start_position().row != node.end_position().row;
 
+            let mut maybe_prev_node = None;
             let mut is_first_arg = true;
+            let mut fmt_skip = false;
+            let mut cursor = node.walk();
             node.children(&mut cursor)
                 .skip(1)
                 .take(node.child_count() - 2)
                 .map(|child| {
-                    let tmp = fmt(child)?;
                     let prev_node_local = maybe_prev_node;
                     maybe_prev_node = Some(child);
+                    if child
+                        .next_sibling()
+                        .map(|sibling| {
+                            child.end_position().row == sibling.start_position().row
+                                && is_fmt_skip_comment(&sibling)
+                        })
+                        .unwrap_or(false)
+                    {
+                        fmt_skip = true;
+                    }
+                    let tmp = if fmt_skip {
+                        fmt_skip = false;
+                        rope.byte_slice(child.byte_range()).to_string()
+                    } else {
+                        fmt(child)?
+                    };
+                    if is_fmt_skip_comment(&child)
+                        && prev_node_local
+                            .map(|prev_end| {
+                                prev_end.end_position().row < child.start_position().row
+                            })
+                            .unwrap_or(true)
+                    {
+                        fmt_skip = true;
+                    }
                     if child.kind() == "comment" {
                         return Ok(match prev_node_local {
                             Some(prev_node)
@@ -585,20 +608,43 @@ fn format_rec(
         }
         "parameters" => {
             handles_comments = true;
-            let open = field("open")?;
-            let close = field("close")?;
-            let is_multiline = open.start_position().row != close.end_position().row;
+            let is_multiline = node.start_position().row != node.end_position().row;
 
             let mut maybe_prev_node = None;
             let mut is_first_param = true;
+            let mut fmt_skip = false;
             let mut cursor = node.walk();
             node.children(&mut cursor)
                 .skip(1)
                 .take(node.child_count() - 2)
                 .map(|child| {
-                    let tmp = fmt(child)?;
                     let prev_node_local = maybe_prev_node;
                     maybe_prev_node = Some(child);
+                    if child
+                        .next_sibling()
+                        .map(|sibling| {
+                            child.end_position().row == sibling.start_position().row
+                                && is_fmt_skip_comment(&sibling)
+                        })
+                        .unwrap_or(false)
+                    {
+                        fmt_skip = true;
+                    }
+                    let tmp = if fmt_skip {
+                        fmt_skip = false;
+                        rope.byte_slice(child.byte_range()).to_string()
+                    } else {
+                        fmt(child)?
+                    };
+                    if is_fmt_skip_comment(&child)
+                        && prev_node_local
+                            .map(|prev_end| {
+                                prev_end.end_position().row < child.start_position().row
+                            })
+                            .unwrap_or(true)
+                    {
+                        fmt_skip = true;
+                    }
                     if child.kind() == "comment" {
                         return Ok(match prev_node_local {
                             Some(prev_node)
@@ -1552,6 +1598,17 @@ mod test {
                 3)
             }
         "#};
+        // TODO: make this work
+        // assert_fmt! {r#"
+        //     foo(
+        //         # fmt: skip
+        //         a= c(
+        //             1, 2,
+        //             3, 4
+        //         ),
+        //         b=0
+        //     )
+        // "#};
     }
 
     // FROM
