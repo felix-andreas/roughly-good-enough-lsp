@@ -5,6 +5,7 @@ use {
     },
     console::style,
     ignore::Walk,
+    itertools::Itertools,
     ropey::Rope,
     std::{path::PathBuf, str::Chars},
     thiserror::Error,
@@ -158,16 +159,40 @@ pub enum FormatError {
     },
 }
 
-pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
-    format_rec(node, rope, false)
+#[derive(Debug, Clone, Copy)]
+enum LineEnding {
+    Lf,
+    Crlf,
 }
 
-fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, FormatError> {
+pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
+    let line_ending = rope
+        .chars()
+        .tuple_windows()
+        .find_map(|(a, b)| match b {
+            '\n' => Some(match a {
+                '\r' => LineEnding::Crlf,
+                _ => LineEnding::Lf,
+            }),
+            _ => None,
+        })
+        .unwrap_or(LineEnding::Lf);
+
+    format_rec(node, rope, false, line_ending)
+}
+
+fn format_rec(
+    node: Node,
+    rope: &Rope,
+    make_multiline: bool,
+    line_ending: LineEnding,
+) -> Result<String, FormatError> {
     const INDENT_BY: usize = 2;
 
     let kind = node.kind();
-    let fmt = |node: Node| format_rec(node, rope, false);
-    let fmt_multiline = |node: Node, make_multiline: bool| format_rec(node, rope, make_multiline);
+    let fmt = |node: Node| format_rec(node, rope, false, line_ending);
+    let fmt_multiline =
+        |node: Node, make_multiline: bool| format_rec(node, rope, make_multiline, line_ending);
     let field = |field: &'static str| {
         node.child_by_field_name(field)
             .ok_or(FormatError::MissingField { kind, field })
@@ -186,6 +211,10 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
                 .byte_slice(node.byte_range())
                 .to_string()
                 .contains("fmt: skip")
+    };
+    let line_ending = match line_ending {
+        LineEnding::Lf => "\n",
+        LineEnding::Crlf => "\r\n",
     };
 
     // note: currently we don't traverse open&close -> they never reach these conditions
@@ -282,21 +311,22 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
                             {
                                 format!(" {tmp}")
                             }
-                            Some(_) => format!("\n{tmp}"),
+                            Some(_) => format!("{line_ending}{tmp}"),
                             None => tmp.to_string(),
                         });
                     }
                     if child.kind() == "comma" {
                         is_first_arg = false;
-                        return Ok(if prev_node_local
-                            .map(|node| node.kind() == "comment")
-                            .unwrap_or(false)
-                        {
-                            "\n,"
-                        } else {
-                            ","
-                        }
-                        .to_string());
+                        return Ok(
+                            if prev_node_local
+                                .map(|node| node.kind() == "comment")
+                                .unwrap_or(false)
+                            {
+                                format!("{line_ending},")
+                            } else {
+                                ",".to_string()
+                            },
+                        );
                     }
                     let result = format!(
                         "{}{}",
@@ -305,12 +335,12 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
                                 .map(|node| node.kind() == "comment")
                                 .unwrap_or(false)
                             {
-                                "\n"
+                                line_ending
                             } else {
                                 ""
                             }
                         } else if is_multiline {
-                            "\n"
+                            line_ending
                         } else {
                             " "
                         },
@@ -329,7 +359,7 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
                 .filter(|node| node.kind() == "comment")
                 .map(fmt)
                 .collect::<Result<Vec<String>, FormatError>>()?
-                .join(&format!("\n{}", " ".repeat(INDENT_BY)));
+                .join(&format!("{line_ending}{}", " ".repeat(INDENT_BY)));
 
             let lhs = field("lhs")?;
             let operator = field("operator")?;
@@ -344,7 +374,7 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
                 if comments.is_empty() { "" } else { " " },
                 comments,
                 if is_multiline {
-                    "\n"
+                    line_ending
                 } else if has_spacing {
                     ""
                 } else {
@@ -402,7 +432,7 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
                         Some(prev_end) => {
                             format!(
                                 "{}{}",
-                                "\n".repeat(usize::clamp(
+                                line_ending.repeat(usize::clamp(
                                     child.start_position().row - prev_end,
                                     1,
                                     2
@@ -574,21 +604,22 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
                             {
                                 format!(" {tmp}")
                             }
-                            Some(_) => format!("\n{tmp}"),
+                            Some(_) => format!("{line_ending}{tmp}"),
                             None => tmp.to_string(),
                         });
                     }
                     if child.kind() == "comma" {
                         is_first_param = false;
-                        return Ok(if prev_node_local
-                            .map(|node| node.kind() == "comment")
-                            .unwrap_or(false)
-                        {
-                            "\n,"
-                        } else {
-                            ","
-                        }
-                        .to_string());
+                        return Ok(
+                            if prev_node_local
+                                .map(|node| node.kind() == "comment")
+                                .unwrap_or(false)
+                            {
+                                format!("{line_ending},")
+                            } else {
+                                ",".to_string()
+                            },
+                        );
                     }
                     let result = format!(
                         "{}{}",
@@ -597,12 +628,12 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
                                 .map(|node| node.kind() == "comment")
                                 .unwrap_or(false)
                             {
-                                "\n"
+                                line_ending
                             } else {
                                 ""
                             }
                         } else if is_multiline {
-                            "\n"
+                            line_ending
                         } else {
                             " "
                         },
@@ -636,7 +667,8 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
                         Some(prev_end) => {
                             format!(
                                 "{}{}",
-                                "\n".repeat(usize::min(2, child.start_position().row - prev_end)),
+                                line_ending
+                                    .repeat(usize::min(2, child.start_position().row - prev_end)),
                                 line
                             )
                         }
@@ -700,7 +732,7 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
                         Some(prev_end) => {
                             format!(
                                 "{}{}",
-                                "\n".repeat(usize::clamp(
+                                line_ending.repeat(usize::clamp(
                                     child.start_position().row - prev_end,
                                     1,
                                     2
@@ -713,7 +745,7 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
                     prev_end = Some(child.end_position().row);
                     Ok(result)
                 })
-                .chain(std::iter::once(Ok("\n".into())))
+                .chain(std::iter::once(Ok(line_ending.into())))
                 .collect::<Result<String, FormatError>>()?
         }
         "repeat_statement" => {
@@ -730,8 +762,8 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
                         for char in content.chars() {
                             match char {
                                 '"' => formatted.push_str("\\\""),
-                                '\n' => formatted.push_str("\\n"),
-                                '\r' => formatted.push_str("\\r"),
+                                // '\n' => formatted.push_str("\\n"),
+                                // '\r' => formatted.push_str("\\r"),
                                 _ => formatted.push(char),
                             }
                         }
@@ -831,7 +863,7 @@ fn format_rec(node: Node, rope: &Rope, make_multiline: bool) -> Result<String, F
             .map(fmt)
             .chain(std::iter::once(Ok(result)))
             .collect::<Result<Vec<String>, FormatError>>()?
-            .join("\n")
+            .join(line_ending)
     })
 }
 
@@ -1056,7 +1088,7 @@ mod test {
             ) {}
         "#};
         assert_fmt! {r#"
-            function (a, 
+            function (a,
             b) baz
         "#};
         assert_fmt! {r#"
@@ -1366,7 +1398,7 @@ mod test {
             #'foo
             #
             # #
-            #'@param 
+            #'@param
             #' @param
             #"foo"
             #'foo'
@@ -1377,6 +1409,26 @@ mod test {
             "#'\n#' foo\nx <- 1\n",
             format_str("#' \n#' foo\nx<-1").unwrap(),
         )
+    }
+
+    #[test]
+    fn line_formatting() {
+        assert_eq!(
+            "foo\nbar\nbaz\n",
+            format_str("foo \n bar \n baz \n").unwrap()
+        );
+        assert_eq!(
+            "foo\nbar\nbaz\n",
+            format_str("foo\nbar\r\nbaz\r\n").unwrap()
+        );
+        assert_eq!(
+            "foo\r\nbar\r\nbaz\r\n",
+            format_str("foo\r\nbar\r\nbaz\r\n").unwrap()
+        );
+        assert_eq!(
+            "foo\r\nbar\r\nbaz\r\n",
+            format_str("foo\r\nbar\nbaz\n").unwrap()
+        );
     }
 
     #[test]

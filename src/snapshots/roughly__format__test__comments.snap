@@ -6,4 +6,5 @@ expression: "format_str(indoc!\n{\n    r#\"\n            # a comment'\n\n       
 
 "# not a comment"
 
-"\n# still not a comment"
+"
+# still not a comment"

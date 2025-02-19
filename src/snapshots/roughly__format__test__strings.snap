@@ -5,12 +5,14 @@ expression: "format_str(indoc!\n{\n    r##\"\n            \"\"\n            ''\n
 ""
 ""
 "foo"
-"foo\nbar"
+"foo
+bar"
 "#"
 ","
 "}"
 "foo"
-"foo\nbar"
+"foo
+bar"
 "#"
 ","
 "}"
