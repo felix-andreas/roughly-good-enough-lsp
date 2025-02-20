@@ -10,9 +10,9 @@ expression: "format_str(indoc!\n{\n    r#\"\n        \t{\n                foo <-
   )
   # fmt: skip
   bar <- c(1,2,
-         3)
+       3)
   foo <- c(1,2,
-         3) # fmt: skip
+       3) # fmt: skip
   bar <- c(
     1,
     2,

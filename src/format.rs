@@ -180,7 +180,12 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
         })
         .unwrap_or(LineEnding::Lf);
 
-    format_rec(node, rope, false, line_ending)
+    Ok(utils::remove_indent_prefix(&format_rec(
+        node,
+        rope,
+        false,
+        line_ending,
+    )?))
 }
 
 fn format_rec(
@@ -195,6 +200,8 @@ fn format_rec(
     let fmt = |node: Node| format_rec(node, rope, false, line_ending);
     let fmt_multiline =
         |node: Node, make_multiline: bool| format_rec(node, rope, make_multiline, line_ending);
+    let fmt_with_ident_prefix =
+        |node: Node| utils::add_indent_prefix(&rope.byte_slice(node.byte_range()).to_string());
     let field = |field: &'static str| {
         node.child_by_field_name(field)
             .ok_or(FormatError::MissingField { kind, field })
@@ -316,7 +323,7 @@ fn format_rec(
                     }
                     let tmp = if fmt_skip {
                         fmt_skip = false;
-                        rope.byte_slice(child.byte_range()).to_string()
+                        fmt_with_ident_prefix(child)
                     } else {
                         fmt(child)?
                     };
@@ -436,7 +443,7 @@ fn format_rec(
                     }
                     let line = if fmt_skip {
                         fmt_skip = false;
-                        rope.byte_slice(child.byte_range()).to_string()
+                        fmt_with_ident_prefix(child)
                     } else {
                         fmt(child)?
                     };
@@ -632,7 +639,7 @@ fn format_rec(
                     }
                     let tmp = if fmt_skip {
                         fmt_skip = false;
-                        rope.byte_slice(child.byte_range()).to_string()
+                        fmt_with_ident_prefix(child)
                     } else {
                         fmt(child)?
                     };
@@ -757,7 +764,7 @@ fn format_rec(
                     }
                     let line = if fmt_skip {
                         fmt_skip = false;
-                        rope.byte_slice(child.byte_range()).to_string()
+                        fmt_with_ident_prefix(child)
                     } else {
                         fmt(child)?
                     };
@@ -820,7 +827,7 @@ fn format_rec(
                 None => "\"\"".to_string(),
             }
         }
-        "string_content" => get_raw(),
+        "string_content" => fmt_with_ident_prefix(node),
         "subset" => {
             let function = field("function")?;
             let arguments = field("arguments")?;
@@ -1598,17 +1605,20 @@ mod test {
                 3)
             }
         "#};
-        // TODO: make this work
-        // assert_fmt! {r#"
-        //     foo(
-        //         # fmt: skip
-        //         a= c(
-        //             1, 2,
-        //             3, 4
-        //         ),
-        //         b=0
-        //     )
-        // "#};
+        assert_fmt! {r#"
+            foo(
+              # fmt: skip
+              a = c(
+                1, 2,
+                3, 4
+              ),
+              b=0
+            )
+            c(
+              1, 2,
+              3, 4
+            ) # fmt: skip
+        "#};
     }
 
     // FROM

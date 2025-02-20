@@ -82,6 +82,46 @@ where
     output
 }
 
+pub fn add_indent_prefix(input: &str) -> String {
+    let mut output = String::with_capacity(input.len() + 5);
+    for char in input.chars() {
+        output.push(char);
+        if char == '\n' {
+            output.push('\x02')
+        }
+    }
+    output
+}
+
+pub fn remove_indent_prefix(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut tmp = String::with_capacity(256);
+    let mut push_to_temp = true;
+    for char in input.chars() {
+        if char == '\x02' {
+            push_to_temp = false;
+            continue;
+        }
+
+        if push_to_temp {
+            tmp.push(char);
+        } else {
+            output.push(char);
+        }
+
+        if char == '\n' {
+            if push_to_temp {
+                output.push_str(&tmp);
+            }
+            tmp.clear();
+            push_to_temp = true;
+        }
+    }
+    output.push_str(&tmp);
+
+    output
+}
+
 pub fn format_node(node: &Node) -> String {
     fn format_node_recursive(cursor: &mut TreeCursor, output: &mut String) {
         let indent = "  ".repeat(cursor.depth() as usize);
@@ -121,4 +161,26 @@ pub fn format_node(node: &Node) -> String {
     let mut cursor = node.walk();
     format_node_recursive(&mut cursor, &mut result);
     result
+}
+
+#[cfg(test)]
+mod test {
+    use crate::utils::{add_indent_prefix, remove_indent_prefix};
+
+    #[test]
+    fn test_add_indent_prefix() {
+        assert_eq!(add_indent_prefix("foo\nbar\nbaz"), "foo\n\x02bar\n\x02baz");
+        assert_eq!(
+            add_indent_prefix("foo\nbar\nbaz\n"),
+            "foo\n\x02bar\n\x02baz\n\x02"
+        );
+    }
+
+    #[test]
+    fn test_removeindent_prefix() {
+        assert_eq!(
+            remove_indent_prefix("foo\n  \x02  bar\n  \x02  baz\n\x02"),
+            "foo\n  bar\n  baz\n"
+        );
+    }
 }
