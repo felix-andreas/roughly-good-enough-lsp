@@ -208,10 +208,14 @@ fn format_rec(
     };
     let field_optional = |field: &'static str| node.child_by_field_name(field);
     let get_raw = || rope.byte_slice(node.byte_range()).to_string();
+    let line_ending = match line_ending {
+        LineEnding::Lf => "\n",
+        LineEnding::Crlf => "\r\n",
+    };
     let wrap_with_braces = |node: Node| -> Result<String, FormatError> {
         Ok(format!(
             "{{{}}}",
-            utils::indent_by_with_newlines(INDENT_BY, fmt(node)?)
+            utils::indent_by_with_newlines(INDENT_BY, fmt(node)?, line_ending)
         ))
     };
     let is_fmt_skip_comment = |node: &Node| {
@@ -220,10 +224,6 @@ fn format_rec(
                 .byte_slice(node.byte_range())
                 .to_string()
                 .contains("fmt: skip")
-    };
-    let line_ending = match line_ending {
-        LineEnding::Lf => "\n",
-        LineEnding::Crlf => "\r\n",
     };
 
     // note: currently we don't traverse open&close -> they never reach these conditions
@@ -413,7 +413,7 @@ fn format_rec(
                     " "
                 },
                 if is_multiline {
-                    utils::indent_by(INDENT_BY, fmt(rhs)?)
+                    utils::indent_by(INDENT_BY, fmt(rhs)?, line_ending)
                 } else {
                     fmt(rhs)?
                 }
@@ -484,7 +484,7 @@ fn format_rec(
             } else if is_multiline || make_multiline || lines.len() > 1 {
                 format!(
                     "{{{}}}",
-                    utils::indent_by_with_newlines(INDENT_BY, lines.join(""))
+                    utils::indent_by_with_newlines(INDENT_BY, lines.join(""), line_ending)
                 )
             } else {
                 format!("{{ {} }}", lines.join(""))
@@ -501,7 +501,7 @@ fn format_rec(
                 if arguments.start_position().row == arguments.end_position().row {
                     arguments_fmt
                 } else {
-                    utils::indent_by_with_newlines(INDENT_BY, arguments_fmt)
+                    utils::indent_by_with_newlines(INDENT_BY, arguments_fmt, line_ending)
                 }
             )
         }
@@ -544,7 +544,7 @@ fn format_rec(
                 {
                     parameters_fmt
                 } else {
-                    utils::indent_by_with_newlines(INDENT_BY, parameters_fmt)
+                    utils::indent_by_with_newlines(INDENT_BY, parameters_fmt, line_ending)
                 },
                 if is_multiline && body.kind() != "braced_expression" {
                     wrap_with_braces(body)?
@@ -565,7 +565,7 @@ fn format_rec(
             format!(
                 "if ({}) {}{}{}",
                 if is_multiline_condition {
-                    utils::indent_by_with_newlines(INDENT_BY, fmt(condition)?)
+                    utils::indent_by_with_newlines(INDENT_BY, fmt(condition)?, line_ending)
                 } else {
                     fmt(condition)?
                 },
@@ -740,7 +740,7 @@ fn format_rec(
                     if node.start_position().row == node.end_position().row {
                         lines.join("")
                     } else {
-                        utils::indent_by_with_newlines(INDENT_BY, lines.join(""))
+                        utils::indent_by_with_newlines(INDENT_BY, lines.join(""), line_ending)
                     }
                 )
             }
@@ -815,8 +815,6 @@ fn format_rec(
                         for char in content.chars() {
                             match char {
                                 '"' => formatted.push_str("\\\""),
-                                // '\n' => formatted.push_str("\\n"),
-                                // '\r' => formatted.push_str("\\r"),
                                 _ => formatted.push(char),
                             }
                         }
@@ -839,7 +837,7 @@ fn format_rec(
                 if arguments.start_position().row == arguments.end_position().row {
                     arguments_fmt
                 } else {
-                    utils::indent_by_with_newlines(INDENT_BY, arguments_fmt)
+                    utils::indent_by_with_newlines(INDENT_BY, arguments_fmt, line_ending)
                 }
             )
         }
@@ -854,7 +852,7 @@ fn format_rec(
                 if arguments.start_position().row == arguments.end_position().row {
                     arguments_fmt
                 } else {
-                    utils::indent_by_with_newlines(INDENT_BY, arguments_fmt)
+                    utils::indent_by_with_newlines(INDENT_BY, arguments_fmt, line_ending)
                 }
             )
         }
@@ -872,7 +870,7 @@ fn format_rec(
             format!(
                 "while ({}) {}",
                 if is_multiline_condition {
-                    utils::indent_by_with_newlines(INDENT_BY, fmt(condition)?)
+                    utils::indent_by_with_newlines(INDENT_BY, fmt(condition)?, line_ending)
                 } else {
                     fmt(condition)?
                 },
@@ -1320,12 +1318,14 @@ mod test {
 
     #[test]
     fn string() {
-        // assert_fmt! {r#"
-        //     "foo
-        //         bar"
-        // "#};
         assert_fmt! {r#"
             '"foo"'
+        "#};
+        assert_fmt! {r#"
+            "foo
+                bar"
+            foo("foo
+                bar")
         "#};
     }
 
