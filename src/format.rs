@@ -816,13 +816,13 @@ fn format_rec(
                     {
                         let mut formatted = String::with_capacity(content.len() + 2);
                         formatted.push('"');
-                        let mut last = 'x';
+                        let mut last_was_escape = false;
                         for char in content.chars() {
                             match char {
-                                '"' if last != '\\' => formatted.push_str("\\\""),
+                                '"' if !last_was_escape => formatted.push_str("\\\""),
                                 _ => formatted.push(char),
                             }
-                            last = char;
+                            last_was_escape = char == '\\' && !last_was_escape;
                         }
                         formatted.push('"');
                         formatted
@@ -1331,6 +1331,8 @@ mod test {
             '"foo"'
             "\"foo\""
             '\"foo"'
+            '\\"foo\\"'
+            "\\\"foo\\\""
         "#};
         assert_fmt! {r#"
             "foo
