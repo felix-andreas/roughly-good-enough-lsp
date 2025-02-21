@@ -39,21 +39,25 @@ pub fn rope_range_to_lsp_range(
 }
 
 // based on https://docs.rs/indent/latest/src/indent/lib.rs.html#27-32
-pub fn indent_by<'a, S>(number_of_spaces: usize, input: S) -> String
+pub fn indent_by<'a, S>(number_of_spaces: usize, input: S, line_ending: &str) -> String
 where
     S: Into<Cow<'a, str>>,
 {
-    indent(" ".repeat(number_of_spaces), input, false)
+    indent(" ".repeat(number_of_spaces), input, false, line_ending)
 }
 
-pub fn indent_by_with_newlines<'a, S>(number_of_spaces: usize, input: S) -> String
+pub fn indent_by_with_newlines<'a, S>(
+    number_of_spaces: usize,
+    input: S,
+    line_ending: &str,
+) -> String
 where
     S: Into<Cow<'a, str>>,
 {
-    indent(" ".repeat(number_of_spaces), input, true)
+    indent(" ".repeat(number_of_spaces), input, true, line_ending)
 }
 
-fn indent<'a, S, T>(prefix: S, input: T, newlines: bool) -> String
+fn indent<'a, S, T>(prefix: S, input: T, newlines: bool, line_ending: &str) -> String
 where
     S: Into<Cow<'a, str>>,
     T: Into<Cow<'a, str>>,
@@ -65,7 +69,7 @@ where
 
     for (i, line) in input.lines().enumerate() {
         if i > 0 || newlines {
-            output.push('\n');
+            output.push_str(line_ending);
         }
 
         if !line.is_empty() {
@@ -75,8 +79,8 @@ where
         output.push_str(line);
     }
 
-    if input.ends_with('\n') || newlines {
-        output.push('\n');
+    if input.ends_with(line_ending) || newlines {
+        output.push_str(line_ending);
     }
 
     output

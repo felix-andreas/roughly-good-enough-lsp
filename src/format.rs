@@ -7,7 +7,7 @@ use {
     ignore::Walk,
     itertools::Itertools,
     ropey::Rope,
-    std::{path::PathBuf, str::Chars},
+    std::path::PathBuf,
     thiserror::Error,
     tree_sitter::Node,
 };
@@ -208,10 +208,14 @@ fn format_rec(
     };
     let field_optional = |field: &'static str| node.child_by_field_name(field);
     let get_raw = || rope.byte_slice(node.byte_range()).to_string();
+    let line_ending = match line_ending {
+        LineEnding::Lf => "\n",
+        LineEnding::Crlf => "\r\n",
+    };
     let wrap_with_braces = |node: Node| -> Result<String, FormatError> {
         Ok(format!(
             "{{{}}}",
-            utils::indent_by_with_newlines(INDENT_BY, fmt(node)?)
+            utils::indent_by_with_newlines(INDENT_BY, fmt(node)?, line_ending)
         ))
     };
     let is_fmt_skip_comment = |node: &Node| {
@@ -220,10 +224,6 @@ fn format_rec(
                 .byte_slice(node.byte_range())
                 .to_string()
                 .contains("fmt: skip")
-    };
-    let line_ending = match line_ending {
-        LineEnding::Lf => "\n",
-        LineEnding::Crlf => "\r\n",
     };
 
     // note: currently we don't traverse open&close -> they never reach these conditions
@@ -247,14 +247,13 @@ fn format_rec(
 
         let mut chars = raw.chars();
 
-        let get_rest = |chars: Chars| chars.collect::<String>();
         let _ = chars.next();
         // reformat comments like #foo to # foo but keep #' foo
         return Ok(match chars.next() {
             Some('\'') => match chars.next() {
                 Some(' ') => raw.into(),
                 Some(other) => {
-                    let rest = get_rest(chars);
+                    let rest = chars.collect::<String>();
                     // avoid formatting #'foo'
                     if rest.contains('\'') {
                         raw.into()
@@ -264,8 +263,8 @@ fn format_rec(
                 }
                 None => "#'".into(),
             },
-            Some(' ' | '#') => raw.into(),
-            Some(other) => format!("# {other}{}", get_rest(chars)),
+            Some('#' | '!' | ' ') => raw.into(),
+            Some(other) => format!("# {other}{}", chars.collect::<String>()),
             None => "#".into(),
         });
     }
@@ -421,7 +420,7 @@ fn format_rec(
                     " "
                 },
                 if is_multiline {
-                    utils::indent_by(INDENT_BY, fmt(rhs)?)
+                    utils::indent_by(INDENT_BY, fmt(rhs)?, line_ending)
                 } else {
                     fmt(rhs)?
                 }
@@ -472,11 +471,15 @@ fn format_rec(
                         Some(prev_end) => {
                             format!(
                                 "{}{}",
-                                line_ending.repeat(usize::clamp(
-                                    child.start_position().row - prev_end,
-                                    1,
-                                    2
-                                )),
+                                if is_multiline || make_multiline {
+                                    line_ending.repeat(usize::clamp(
+                                        child.start_position().row - prev_end,
+                                        1,
+                                        2,
+                                    ))
+                                } else {
+                                    "; ".into()
+                                },
                                 line
                             )
                         }
@@ -485,20 +488,21 @@ fn format_rec(
                     prev_end = Some(child.end_position().row);
                     Ok(result)
                 })
-                .collect::<Result<Vec<String>, FormatError>>()?;
+                .collect::<Result<String, FormatError>>()?;
 
             if lines.is_empty() {
                 "{}".to_string()
-            } else if is_multiline || make_multiline || lines.len() > 1 {
+            } else if is_multiline || make_multiline {
                 format!(
                     "{{{}}}",
-                    utils::indent_by_with_newlines(INDENT_BY, lines.join(""))
+                    utils::indent_by_with_newlines(INDENT_BY, lines, line_ending)
                 )
             } else {
-                format!("{{ {} }}", lines.join(""))
+                format!("{{ {} }}", lines)
             }
         }
         "call" => {
+            let is_multiline = node.start_position().row != node.end_position().row;
             let function = field("function")?;
             let arguments = field("arguments")?;
 
@@ -506,10 +510,18 @@ fn format_rec(
             let arguments_fmt = fmt(arguments)?;
             format!(
                 "{function_fmt}({})",
-                if arguments.start_position().row == arguments.end_position().row {
-                    arguments_fmt
+                if is_multiline
+                    // don't wrap calls like foo({ bar })
+                    && !(arguments.named_child_count() == 1 && {
+                        let argument = arguments.named_child(0).unwrap();
+                        argument.kind() == "argument"
+                            && argument.child_count() == 1
+                            && argument.child(0).unwrap().kind() == "braced_expression"
+                    })
+                {
+                    utils::indent_by_with_newlines(INDENT_BY, arguments_fmt, line_ending)
                 } else {
-                    utils::indent_by_with_newlines(INDENT_BY, arguments_fmt)
+                    arguments_fmt
                 }
             )
         }
@@ -552,7 +564,7 @@ fn format_rec(
                 {
                     parameters_fmt
                 } else {
-                    utils::indent_by_with_newlines(INDENT_BY, parameters_fmt)
+                    utils::indent_by_with_newlines(INDENT_BY, parameters_fmt, line_ending)
                 },
                 if is_multiline && body.kind() != "braced_expression" {
                     wrap_with_braces(body)?
@@ -572,8 +584,8 @@ fn format_rec(
 
             format!(
                 "if ({}) {}{}{}",
-                if is_multiline_condition {
-                    utils::indent_by_with_newlines(INDENT_BY, fmt(condition)?)
+                if is_multiline_condition && condition.kind() != "braced_expression" {
+                    utils::indent_by_with_newlines(INDENT_BY, fmt(condition)?, line_ending)
                 } else {
                     fmt(condition)?
                 },
@@ -748,7 +760,7 @@ fn format_rec(
                     if node.start_position().row == node.end_position().row {
                         lines.join("")
                     } else {
-                        utils::indent_by_with_newlines(INDENT_BY, lines.join(""))
+                        utils::indent_by_with_newlines(INDENT_BY, lines.join(""), line_ending)
                     }
                 )
             }
@@ -820,13 +832,13 @@ fn format_rec(
                     {
                         let mut formatted = String::with_capacity(content.len() + 2);
                         formatted.push('"');
+                        let mut last_was_escape = false;
                         for char in content.chars() {
                             match char {
-                                '"' => formatted.push_str("\\\""),
-                                // '\n' => formatted.push_str("\\n"),
-                                // '\r' => formatted.push_str("\\r"),
+                                '"' if !last_was_escape => formatted.push_str("\\\""),
                                 _ => formatted.push(char),
                             }
+                            last_was_escape = char == '\\' && !last_was_escape;
                         }
                         formatted.push('"');
                         formatted
@@ -847,7 +859,7 @@ fn format_rec(
                 if arguments.start_position().row == arguments.end_position().row {
                     arguments_fmt
                 } else {
-                    utils::indent_by_with_newlines(INDENT_BY, arguments_fmt)
+                    utils::indent_by_with_newlines(INDENT_BY, arguments_fmt, line_ending)
                 }
             )
         }
@@ -862,7 +874,7 @@ fn format_rec(
                 if arguments.start_position().row == arguments.end_position().row {
                     arguments_fmt
                 } else {
-                    utils::indent_by_with_newlines(INDENT_BY, arguments_fmt)
+                    utils::indent_by_with_newlines(INDENT_BY, arguments_fmt, line_ending)
                 }
             )
         }
@@ -879,8 +891,8 @@ fn format_rec(
 
             format!(
                 "while ({}) {}",
-                if is_multiline_condition {
-                    utils::indent_by_with_newlines(INDENT_BY, fmt(condition)?)
+                if is_multiline_condition && condition.kind() != "braced_expression" {
+                    utils::indent_by_with_newlines(INDENT_BY, fmt(condition)?, line_ending)
                 } else {
                     fmt(condition)?
                 },
@@ -1036,6 +1048,9 @@ mod test {
                 b
             }
         "#};
+        assert_fmt! {r#"
+            { foo; bar }
+        "#};
     }
 
     #[test]
@@ -1066,6 +1081,15 @@ mod test {
                 b= 2L) #baz
 
                 # foo
+        "#};
+        assert_fmt! {r#"
+            foo({ bar; baz })
+            foo({ bar;
+            baz })
+            foo({ bar;
+            baz }, qux)
+            foo(qux = { bar;
+            baz }, qux)
         "#};
     }
 
@@ -1232,6 +1256,13 @@ mod test {
                 if (foo) bar else baz
             }
         "#};
+
+        // condition is braced expression
+        assert_fmt! {r#"
+        	if ({ foo; bar }) { baz }
+        	if ({ foo;
+             bar }) { baz }
+        "#};
     }
 
     #[test]
@@ -1328,12 +1359,18 @@ mod test {
 
     #[test]
     fn string() {
-        // assert_fmt! {r#"
-        //     "foo
-        //         bar"
-        // "#};
         assert_fmt! {r#"
             '"foo"'
+            "\"foo\""
+            '\"foo"'
+            '\\"foo\\"'
+            "\\\"foo\\\""
+        "#};
+        assert_fmt! {r#"
+            "foo
+                bar"
+            foo("foo
+                bar")
         "#};
     }
 
@@ -1443,6 +1480,12 @@ mod test {
         assert_fmt! {r#"
             while(foo(
             bar)) {baz}
+        "#};
+
+        assert_fmt! {r#"
+            while ({ foo; bar }) { baz }
+            while ({ foo;
+            bar }) { baz }
         "#};
     }
 
@@ -1642,6 +1685,10 @@ mod test {
 
             '
             # still not a comment'
+        "#}
+
+        assert_fmt! {r#"
+            #!/usr/bin/env Rscript
         "#}
     }
 

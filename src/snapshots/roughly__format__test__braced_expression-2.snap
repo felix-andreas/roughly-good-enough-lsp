@@ -2,7 +2,4 @@
 source: src/format.rs
 expression: "format_str(indoc! { r#\"\n            { 1L;2}\n        \"# }).unwrap()"
 ---
-{
-  1L
-  2
-}
+{ 1L; 2 }
