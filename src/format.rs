@@ -495,6 +495,7 @@ fn format_rec(
             }
         }
         "call" => {
+            let is_multiline = node.start_position().row != node.end_position().row;
             let function = field("function")?;
             let arguments = field("arguments")?;
 
@@ -502,10 +503,18 @@ fn format_rec(
             let arguments_fmt = fmt(arguments)?;
             format!(
                 "{function_fmt}({})",
-                if arguments.start_position().row == arguments.end_position().row {
-                    arguments_fmt
-                } else {
+                if is_multiline
+                    // don't wrap calls like foo({ bar })
+                    && !(arguments.named_child_count() == 1 && {
+                        let argument = arguments.named_child(0).unwrap();
+                        argument.kind() == "argument"
+                            && argument.child_count() == 1
+                            && argument.child(0).unwrap().kind() == "braced_expression"
+                    })
+                {
                     utils::indent_by_with_newlines(INDENT_BY, arguments_fmt, line_ending)
+                } else {
+                    arguments_fmt
                 }
             )
         }
@@ -568,7 +577,7 @@ fn format_rec(
 
             format!(
                 "if ({}) {}{}{}",
-                if is_multiline_condition {
+                if is_multiline_condition && condition.kind() != "braced_expression" {
                     utils::indent_by_with_newlines(INDENT_BY, fmt(condition)?, line_ending)
                 } else {
                     fmt(condition)?
@@ -875,7 +884,7 @@ fn format_rec(
 
             format!(
                 "while ({}) {}",
-                if is_multiline_condition {
+                if is_multiline_condition && condition.kind() != "braced_expression" {
                     utils::indent_by_with_newlines(INDENT_BY, fmt(condition)?, line_ending)
                 } else {
                     fmt(condition)?
@@ -1066,6 +1075,15 @@ mod test {
 
                 # foo
         "#};
+        assert_fmt! {r#"
+            foo({ bar; baz })
+            foo({ bar;
+            baz })
+            foo({ bar;
+            baz }, qux)
+            foo(qux = { bar;
+            baz }, qux)
+        "#};
     }
 
     #[test]
@@ -1230,6 +1248,13 @@ mod test {
         	function() {
                 if (foo) bar else baz
             }
+        "#};
+
+        // condition is braced expression
+        assert_fmt! {r#"
+        	if ({ foo; bar }) { baz }
+        	if ({ foo;
+             bar }) { baz }
         "#};
     }
 
@@ -1448,6 +1473,12 @@ mod test {
         assert_fmt! {r#"
             while(foo(
             bar)) {baz}
+        "#};
+
+        assert_fmt! {r#"
+            while ({ foo; bar }) { baz }
+            while ({ foo;
+            bar }) { baz }
         "#};
     }
 

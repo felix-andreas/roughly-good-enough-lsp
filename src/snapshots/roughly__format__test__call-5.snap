@@ -1,0 +1,23 @@
+---
+source: src/format.rs
+expression: "format_str(indoc!\n{\n    r#\"\n            foo({ bar; baz })\n            foo({ bar;\n            baz })\n            foo({ bar;\n            baz }, qux)\n            foo(qux = { bar;\n            baz }, qux)\n        \"#\n}).unwrap()"
+---
+foo({ bar; baz })
+foo({
+  bar
+  baz
+})
+foo(
+  {
+    bar
+    baz
+  },
+  qux
+)
+foo(
+  qux = {
+    bar
+    baz
+  },
+  qux
+)
