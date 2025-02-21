@@ -126,7 +126,7 @@ pub fn remove_indent_prefix(input: &str) -> String {
     output
 }
 
-pub fn format_node(node: &Node) -> String {
+pub fn format_node(node: Node) -> String {
     fn format_node_recursive(cursor: &mut TreeCursor, output: &mut String) {
         let indent = "  ".repeat(cursor.depth() as usize);
         if cursor.node().child_count() > 0 {

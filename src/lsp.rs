@@ -1,7 +1,8 @@
 use {
-    crate::{format, index, tree},
+    crate::{format, index, tree, utils},
     dashmap::DashMap,
     ropey::Rope,
+    std::fmt,
     tower_lsp::{
         Client, LanguageServer, LspService, Server,
         jsonrpc::{Error, Result},
@@ -121,9 +122,9 @@ impl LanguageServer for Backend {
                     let end =
                         rope.line_to_char(range.end.line as usize) + range.end.character as usize;
 
-                    let old_end_byte = rope.char_to_byte(end);
+                    let old_end_byte = rope.try_char_to_byte(end).unwrap();
                     let new_end_char = start + change.text.len();
-                    let new_end_byte = rope.char_to_byte(new_end_char);
+                    let new_end_byte = rope.try_char_to_byte(new_end_char - 1).unwrap();
 
                     rope.remove(start..end);
                     rope.insert(start, &change.text);
@@ -131,7 +132,7 @@ impl LanguageServer for Backend {
                     let new_end_line = rope.char_to_line(start + change.text.len());
 
                     tree.edit(&InputEdit {
-                        start_byte: rope.char_to_byte(start),
+                        start_byte: rope.try_char_to_byte(start).unwrap(),
                         old_end_byte,
                         new_end_byte,
                         start_position: Point {
@@ -153,6 +154,12 @@ impl LanguageServer for Backend {
                             tree::parse(&format!("{}", document.rope), Some(&document.tree));
                 }
 
+                // DEBUG
+                // eprintln!("<--DOCUMENT-->\n{}<--END-->", document.rope.to_string());
+                // eprintln!("{}", utils::format_node(document.tree.root_node()));
+                // if let Ok(code) = format::format(document.tree.root_node(), &document.rope) {
+                //     eprintln!("<--DOCUMENT-->\n{}<--END-->", code);
+                // }
                 document
             });
 
