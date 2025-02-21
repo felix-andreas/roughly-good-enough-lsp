@@ -366,14 +366,22 @@ fn format_rec(
                                 .map(|node| node.kind() == "comment")
                                 .unwrap_or(false)
                             {
-                                line_ending
+                                line_ending.into()
                             } else {
-                                ""
+                                "".into()
                             }
                         } else if is_multiline {
-                            line_ending
+                            line_ending.repeat(usize::clamp(
+                                prev_node_local
+                                    .map(|node| {
+                                        child.start_position().row - node.end_position().row
+                                    })
+                                    .unwrap_or(1),
+                                1,
+                                2,
+                            ))
                         } else {
-                            " "
+                            " ".into()
                         },
                         tmp
                     );
