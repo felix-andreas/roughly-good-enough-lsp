@@ -7,7 +7,7 @@ use {
     ignore::Walk,
     itertools::Itertools,
     ropey::Rope,
-    std::{path::PathBuf, str::Chars},
+    std::path::PathBuf,
     thiserror::Error,
     tree_sitter::Node,
 };
@@ -247,14 +247,13 @@ fn format_rec(
 
         let mut chars = raw.chars();
 
-        let get_rest = |chars: Chars| chars.collect::<String>();
         let _ = chars.next();
         // reformat comments like #foo to # foo but keep #' foo
         return Ok(match chars.next() {
             Some('\'') => match chars.next() {
                 Some(' ') => raw.into(),
                 Some(other) => {
-                    let rest = get_rest(chars);
+                    let rest = chars.collect::<String>();
                     // avoid formatting #'foo'
                     if rest.contains('\'') {
                         raw.into()
@@ -264,8 +263,8 @@ fn format_rec(
                 }
                 None => "#'".into(),
             },
-            Some(' ' | '#') => raw.into(),
-            Some(other) => format!("# {other}{}", get_rest(chars)),
+            Some('#' | '!' | ' ') => raw.into(),
+            Some(other) => format!("# {other}{}", chars.collect::<String>()),
             None => "#".into(),
         });
     }
@@ -1678,6 +1677,10 @@ mod test {
 
             '
             # still not a comment'
+        "#}
+
+        assert_fmt! {r#"
+            #!/usr/bin/env Rscript
         "#}
     }
 
