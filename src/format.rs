@@ -464,11 +464,15 @@ fn format_rec(
                         Some(prev_end) => {
                             format!(
                                 "{}{}",
-                                line_ending.repeat(usize::clamp(
-                                    child.start_position().row - prev_end,
-                                    1,
-                                    2
-                                )),
+                                if is_multiline || make_multiline {
+                                    line_ending.repeat(usize::clamp(
+                                        child.start_position().row - prev_end,
+                                        1,
+                                        2,
+                                    ))
+                                } else {
+                                    "; ".into()
+                                },
                                 line
                             )
                         }
@@ -477,17 +481,17 @@ fn format_rec(
                     prev_end = Some(child.end_position().row);
                     Ok(result)
                 })
-                .collect::<Result<Vec<String>, FormatError>>()?;
+                .collect::<Result<String, FormatError>>()?;
 
             if lines.is_empty() {
                 "{}".to_string()
-            } else if is_multiline || make_multiline || lines.len() > 1 {
+            } else if is_multiline || make_multiline {
                 format!(
                     "{{{}}}",
-                    utils::indent_by_with_newlines(INDENT_BY, lines.join(""), line_ending)
+                    utils::indent_by_with_newlines(INDENT_BY, lines, line_ending)
                 )
             } else {
-                format!("{{ {} }}", lines.join(""))
+                format!("{{ {} }}", lines)
             }
         }
         "call" => {
@@ -1027,6 +1031,9 @@ mod test {
 
                 b
             }
+        "#};
+        assert_fmt! {r#"
+            { foo; bar }
         "#};
     }
 
