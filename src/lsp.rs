@@ -308,7 +308,7 @@ impl LanguageServer for Backend {
             Ok(new) => new,
             Err(error) => {
                 log::error!("formatting: {}", error);
-                return Err(Error::internal_error());
+                return Ok(None);
             }
         };
 

@@ -148,10 +148,18 @@ pub fn print_diff(old: &str, new: &str) {
 
 #[derive(Error, Debug)]
 pub enum FormatError {
-    #[error("Failed to parse node {raw} with parent of kind {kind}")]
-    SyntaxError { kind: &'static str, raw: String },
-    #[error("The node of type {kind} has missing children {raw}")]
-    Missing { kind: &'static str, raw: String },
+    #[error("Unexpected {kind} at line {line} col {col}")]
+    SyntaxError {
+        kind: &'static str,
+        line: usize,
+        col: usize,
+    },
+    #[error("Missing {kind} at line {line} col {col}")]
+    Missing {
+        kind: &'static str,
+        line: usize,
+        col: usize,
+    },
     #[error("The node has unknown type {kind}: {raw}")]
     Unknown { kind: &'static str, raw: String },
     #[error("Missing filed {field} for node of kind {kind}")]
@@ -183,23 +191,23 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
     Ok(utils::remove_indent_prefix(&format_rec(
         node,
         rope,
-        false,
         line_ending,
+        false,
     )?))
 }
 
 fn format_rec(
     node: Node,
     rope: &Rope,
-    make_multiline: bool,
     line_ending: LineEnding,
+    make_multiline: bool,
 ) -> Result<String, FormatError> {
     const INDENT_BY: usize = 2;
 
     let kind = node.kind();
-    let fmt = |node: Node| format_rec(node, rope, false, line_ending);
+    let fmt = |node: Node| format_rec(node, rope, line_ending, false);
     let fmt_multiline =
-        |node: Node, make_multiline: bool| format_rec(node, rope, make_multiline, line_ending);
+        |node: Node, make_multiline: bool| format_rec(node, rope, line_ending, make_multiline);
     let fmt_with_ident_prefix =
         |node: Node| utils::add_indent_prefix(&rope.byte_slice(node.byte_range()).to_string());
     let field = |field: &'static str| {
@@ -225,20 +233,33 @@ fn format_rec(
                 .to_string()
                 .contains("fmt: skip")
     };
+    let missing = |node: Node| FormatError::Missing {
+        kind: node.kind(),
+        line: node.start_position().row,
+        col: node.start_position().column,
+    };
+    let error = |node: Node| FormatError::SyntaxError {
+        kind: node.kind(),
+        line: node.start_position().row,
+        col: node.start_position().column,
+    };
+    let check = |node: Node| -> Result<(), FormatError> {
+        if node.is_missing() {
+            Err(missing(node))
+        } else if node.is_error() {
+            Err(error(node))
+        } else {
+            Ok(())
+        }
+    };
 
     // note: currently we don't traverse open&close -> they never reach these conditions
     if node.is_error() {
-        return Err(FormatError::SyntaxError {
-            kind: node.parent().map(|node| node.kind()).unwrap_or("no parent"),
-            raw: get_raw(),
-        });
+        return Err(error(node));
     }
 
     if node.is_missing() {
-        return Err(FormatError::Missing {
-            kind: node.parent().map(|node| node.kind()).unwrap_or("no parent"),
-            raw: get_raw(),
-        });
+        return Err(missing(node));
     }
 
     if node.kind() == "comment" {
@@ -297,6 +318,8 @@ fn format_rec(
             }
         }
         "arguments" => {
+            check(field("open")?)?;
+            check(field("close")?)?;
             handles_comments = true;
             let is_multiline = node.start_position().row != node.end_position().row;
 
@@ -419,6 +442,8 @@ fn format_rec(
             )
         }
         "braced_expression" => {
+            check(field("open")?)?;
+            check(field("close")?)?;
             handles_comments = true;
             let mut cursor = node.walk();
             let is_multiline = node.start_position().row != node.end_position().row;
@@ -971,6 +996,7 @@ mod test {
         assert_fmt! {r#"
             x<-1;y<-2
         "#};
+        // pipeline operator
         assert_fmt! {r#"
             foo |>
                 bar
@@ -1593,25 +1619,44 @@ mod test {
             function
         "#});
 
-        let Err(FormatError::SyntaxError { kind, raw }) = result else {
+        let Err(FormatError::SyntaxError { kind, line, col }) = result else {
             panic!()
         };
-        assert_eq!(kind, "program");
-        assert_eq!(raw, "function");
+        assert_eq!(kind, "ERROR");
+        assert_eq!(line, 0);
+        assert_eq!(col, 0);
     }
 
     #[test]
     fn missing() {
-        assert_fmt! {r#"
+        let result = format_str(indoc! {r#"
             x <- 1
             function() { # missing function body
                 x <- 2
                 x <- 3
             x <- 3
-        "#};
+        "#});
 
-        // uncomment in case we want to throw an error instead
-        // assert!(matches!(result, FormatError::Missing { "fuc",  }) )
+        assert!(matches!(
+            result,
+            Err(FormatError::Missing {
+                kind: "}",
+                line: 5,
+                col: 0
+            })
+        ));
+
+        let result = format_str(indoc! {r#"
+            foo(
+        "#});
+        assert!(matches!(
+            result,
+            Err(FormatError::Missing {
+                kind: ")",
+                line: 0,
+                col: 4
+            })
+        ));
     }
 
     // DIRECTIVES
