@@ -66,7 +66,7 @@ pub fn run(maybe_files: Option<&[PathBuf]>, check: bool, diff: bool) -> Result<(
 
     if n_files == 0 {
         cli::warning("No R files found under the given path(s)");
-        return Ok(());
+        return Err(());
     }
 
     let (first, second) = if check {
@@ -188,7 +188,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
         })
         .unwrap_or(LineEnding::Lf);
 
-    Ok(utils::remove_indent_prefix(&format_rec(
+    Ok(utils::remove_indent_prefix(&traverse(
         node,
         rope,
         line_ending,
@@ -196,7 +196,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
     )?))
 }
 
-fn format_rec(
+fn traverse(
     node: Node,
     rope: &Rope,
     line_ending: LineEnding,
@@ -205,9 +205,9 @@ fn format_rec(
     const INDENT_BY: usize = 2;
 
     let kind = node.kind();
-    let fmt = |node: Node| format_rec(node, rope, line_ending, false);
+    let fmt = |node: Node| traverse(node, rope, line_ending, false);
     let fmt_multiline =
-        |node: Node, make_multiline: bool| format_rec(node, rope, line_ending, make_multiline);
+        |node: Node, make_multiline: bool| traverse(node, rope, line_ending, make_multiline);
     let fmt_with_ident_prefix =
         |node: Node| utils::add_indent_prefix(&rope.byte_slice(node.byte_range()).to_string());
     let field = |field: &'static str| {

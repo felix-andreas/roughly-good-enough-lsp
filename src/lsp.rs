@@ -1,8 +1,7 @@
 use {
-    crate::{format, index, tree, utils},
+    crate::{diagnostics, format, index, tree},
     dashmap::DashMap,
     ropey::Rope,
-    std::fmt,
     tower_lsp::{
         Client, LanguageServer, LspService, Server,
         jsonrpc::{Error, Result},
@@ -59,7 +58,6 @@ impl LanguageServer for Backend {
                     trigger_characters: Some(vec!["$".into(), "@".into()]),
                     ..Default::default()
                 }),
-                // definition_provider: Some(OneOf::Left(true)),
                 document_formatting_provider: Some(OneOf::Left(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
                 text_document_sync: Some(TextDocumentSyncCapability::Options(
@@ -95,17 +93,26 @@ impl LanguageServer for Backend {
     //
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
-        log::debug!("did open {}", params.text_document.uri);
+        log::debug!("did open {}", params.text_document.uri.path());
         let rope = Rope::from_str(&params.text_document.text);
         let tree = tree::parse(&params.text_document.text, None);
-        index::compute_diagnostics(params.text_document.uri.clone(), &rope).await;
+
+        let diags = diagnostics::diagnostics_syntax(tree.root_node(), &rope);
 
         self.document_map
-            .insert(params.text_document.uri, Document { rope, tree });
+            .insert(params.text_document.uri.clone(), Document { rope, tree });
+
+        self.client
+            .publish_diagnostics(
+                params.text_document.uri.clone(),
+                diags,
+                Some(params.text_document.version),
+            )
+            .await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
-        log::debug!("did change {}", params.text_document.uri);
+        log::debug!("did change {}", params.text_document.uri.path());
         self.document_map
             .alter(&params.text_document.uri, |_, mut document| {
                 for change in params.content_changes {
@@ -113,6 +120,15 @@ impl LanguageServer for Backend {
                         log::warn!("unexpected case #2141 - check");
                         continue;
                     };
+                    // DEBUG
+                    // eprintln!(
+                    //     "{}:{}, {}:{} - {}",
+                    //     range.start.line,
+                    //     range.start.character,
+                    //     range.end.line,
+                    //     range.end.character,
+                    //     change.text
+                    // );
 
                     let (rope, tree) = (&mut document.rope, &mut document.tree);
 
@@ -123,11 +139,12 @@ impl LanguageServer for Backend {
                         rope.line_to_char(range.end.line as usize) + range.end.character as usize;
 
                     let old_end_byte = rope.try_char_to_byte(end).unwrap();
-                    let new_end_char = start + change.text.len();
-                    let new_end_byte = rope.try_char_to_byte(new_end_char - 1).unwrap();
 
                     rope.remove(start..end);
                     rope.insert(start, &change.text);
+
+                    let new_end_char = start + change.text.len();
+                    let new_end_byte = rope.try_char_to_byte(new_end_char).unwrap();
 
                     let new_end_line = rope.char_to_line(start + change.text.len());
 
@@ -164,7 +181,15 @@ impl LanguageServer for Backend {
             });
 
         if let Some(document) = self.document_map.get(&params.text_document.uri) {
-            index::compute_diagnostics(params.text_document.uri, &document.rope).await;
+            let diags = diagnostics::diagnostics_syntax(document.tree.root_node(), &document.rope);
+
+            self.client
+                .publish_diagnostics(
+                    params.text_document.uri.clone(),
+                    diags,
+                    Some(params.text_document.version),
+                )
+                .await;
         };
     }
 
@@ -173,11 +198,15 @@ impl LanguageServer for Backend {
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
-        log::debug!("did save {}", params.text_document.uri);
+        log::debug!("did save {}", params.text_document.uri.path());
 
         index::index_update(&self.symbols_map, &params.text_document.uri);
         if let Some(document) = self.document_map.get(&params.text_document.uri) {
-            index::compute_diagnostics(params.text_document.uri, &document.rope).await;
+            let diags = diagnostics::diagnostics_syntax(document.tree.root_node(), &document.rope);
+
+            self.client
+                .publish_diagnostics(params.text_document.uri.clone(), diags, None)
+                .await;
         };
     }
 

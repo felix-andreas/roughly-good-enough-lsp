@@ -60,8 +60,8 @@ roughly fmt --diff         # Only show diff if files would be formatted
 Or, to run Roughly as a linter:
 
 ```
-roughly lint               # Lint all files in the current directory
-roughly lint <path>        # Lint all files in `<path>`
+roughly check               # Check all files in the current directory
+roughly check <path>        # Check all files in `<path>`
 ```
 
 ## Features
