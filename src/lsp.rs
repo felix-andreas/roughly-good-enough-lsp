@@ -1,7 +1,8 @@
 use {
-    crate::{diagnostics, format, index, tree},
+    crate::{cli, config::Config, diagnostics, format, index, tree},
     dashmap::DashMap,
     ropey::Rope,
+    std::path::Path,
     tower_lsp::{
         Client, LanguageServer, LspService, Server,
         jsonrpc::{Error, Result},
@@ -14,7 +15,16 @@ pub async fn run() {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
+    let config = match Config::from_path(Path::new(".")) {
+        Ok(config) => config,
+        Err(err) => {
+            cli::error(&err.to_string());
+            return;
+        }
+    };
+
     let (service, socket) = LspService::new(|client| Backend {
+        config,
         client,
         symbols_map: DashMap::new(),
         document_map: DashMap::new(),
@@ -27,6 +37,7 @@ pub async fn run() {
 
 #[derive(Debug)]
 struct Backend {
+    config: Config,
     client: Client,
     symbols_map: DashMap<Url, Vec<DocumentSymbol>>,
     document_map: DashMap<Url, Document>,
@@ -97,7 +108,11 @@ impl LanguageServer for Backend {
         let rope = Rope::from_str(&params.text_document.text);
         let tree = tree::parse(&params.text_document.text, None);
 
-        let diags = diagnostics::diagnostics_syntax(tree.root_node(), &rope);
+        let diagnostics = diagnostics::diagnostics(
+            tree.root_node(),
+            &rope,
+            diagnostics::Config::from_config(self.config),
+        );
 
         self.document_map
             .insert(params.text_document.uri.clone(), Document { rope, tree });
@@ -105,7 +120,7 @@ impl LanguageServer for Backend {
         self.client
             .publish_diagnostics(
                 params.text_document.uri.clone(),
-                diags,
+                diagnostics,
                 Some(params.text_document.version),
             )
             .await;
@@ -181,12 +196,16 @@ impl LanguageServer for Backend {
             });
 
         if let Some(document) = self.document_map.get(&params.text_document.uri) {
-            let diags = diagnostics::diagnostics_syntax(document.tree.root_node(), &document.rope);
+            let diagnostics = diagnostics::diagnostics(
+                document.tree.root_node(),
+                &document.rope,
+                diagnostics::Config::from_config(self.config),
+            );
 
             self.client
                 .publish_diagnostics(
                     params.text_document.uri.clone(),
-                    diags,
+                    diagnostics,
                     Some(params.text_document.version),
                 )
                 .await;
@@ -202,10 +221,14 @@ impl LanguageServer for Backend {
 
         index::index_update(&self.symbols_map, &params.text_document.uri);
         if let Some(document) = self.document_map.get(&params.text_document.uri) {
-            let diags = diagnostics::diagnostics_syntax(document.tree.root_node(), &document.rope);
+            let diagnostics = diagnostics::diagnostics(
+                document.tree.root_node(),
+                &document.rope,
+                diagnostics::Config::from_config(self.config),
+            );
 
             self.client
-                .publish_diagnostics(params.text_document.uri.clone(), diags, None)
+                .publish_diagnostics(params.text_document.uri.clone(), diagnostics, None)
                 .await;
         };
     }
@@ -340,7 +363,9 @@ impl LanguageServer for Backend {
             return Err(Error::internal_error());
         };
         let (rope, tree) = (&document.rope, &document.tree);
-        let new = match format::format(tree.root_node(), rope) {
+        let new = match format::format(tree.root_node(), rope, format::Config {
+            spaces: self.config.spaces,
+        }) {
             Ok(new) => new,
             Err(error) => {
                 log::error!("formatting: {}", error);

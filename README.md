@@ -64,6 +64,15 @@ roughly check               # Check all files in the current directory
 roughly check <path>        # Check all files in `<path>`
 ```
 
+## Configuration
+
+You can configure roughly via a project-specific `roughly.toml` file:
+
+```toml
+case = "snake_case" # or camelCase
+spaces = 2
+```
+
 ## Features
 
 * Completion

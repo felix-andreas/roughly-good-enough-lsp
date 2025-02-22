@@ -1,16 +1,40 @@
 use {
-    crate::{cli, tree},
+    crate::{
+        cli,
+        config::{self, Case},
+        tree,
+    },
     console::style,
     ignore::Walk,
+    inflections::case,
     ropey::Rope,
     std::path::PathBuf,
     tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range},
     tree_sitter::{Node, TreeCursor},
 };
 
+#[derive(Debug, Clone, Copy)]
+pub struct Config {
+    case: Case,
+}
+
+impl Config {
+    pub fn from_config(config: config::Config) -> Self {
+        Config { case: config.case }
+    }
+}
+
 pub fn run(maybe_files: Option<&[PathBuf]>) -> Result<(), ()> {
     let root: Vec<PathBuf> = vec![".".into()];
     let files = maybe_files.unwrap_or(&root);
+
+    let config = match config::Config::from_path(&files.first().unwrap()) {
+        Ok(config) => config,
+        Err(err) => {
+            cli::error(&err.to_string());
+            return Err(());
+        }
+    };
 
     let mut n_files = 0;
     let mut n_errors = 0;
@@ -37,10 +61,9 @@ pub fn run(maybe_files: Option<&[PathBuf]>) -> Result<(), ()> {
         };
         let tree = tree::parse(&old, None);
         let rope = Rope::from_str(&old);
-        let diagnostics = diagnostics_syntax(tree.root_node(), &rope);
-        n_errors += diagnostics.len();
 
-        for diagnostic in diagnostics {
+        for diagnostic in diagnostics(tree.root_node(), &rope, Config { case: config.case }) {
+            n_errors += 1;
             cli::error(&format!("{}", diagnostic.message));
             let range = diagnostic.range;
             eprintln!(
@@ -92,7 +115,7 @@ pub fn run(maybe_files: Option<&[PathBuf]>) -> Result<(), ()> {
                     range.start.character as usize,
                     range.end.character as usize
                 )),
-                style(diagnostic.message).red().bold()
+                style(&diagnostic.message).red().bold()
             );
 
             eprintln!("\n")
@@ -107,34 +130,13 @@ pub fn run(maybe_files: Option<&[PathBuf]>) -> Result<(), ()> {
     if n_errors == 0 { Ok(()) } else { Err(()) }
 }
 
+pub fn diagnostics(node: Node, rope: &Rope, config: Config) -> Vec<Diagnostic> {
+    let mut diagnostics = diagnostics_syntax(node, &rope);
+    diagnostics.extend(diagnostics_semantics(node, &rope, config));
+    diagnostics
+}
+
 pub fn diagnostics_syntax(node: Node, rope: &Rope) -> Vec<Diagnostic> {
-    fn node_range(node: Node) -> Range {
-        Range {
-            start: Position {
-                line: node.start_position().row as u32,
-                character: node.start_position().column as u32,
-            },
-            end: Position {
-                line: node.end_position().row as u32,
-                character: node.end_position().column as u32,
-            },
-        }
-    }
-
-    fn diag(node: Node, message: String) -> Diagnostic {
-        Diagnostic {
-            message: message,
-            severity: Some(DiagnosticSeverity::ERROR),
-            range: node_range(node),
-            code: None,
-            code_description: None,
-            source: None,
-            related_information: None,
-            tags: None,
-            data: None,
-        }
-    }
-
     fn traverse(cursor: &mut TreeCursor, diagnostics: &mut Vec<Diagnostic>, rope: &Rope) -> bool {
         let node = cursor.node();
         if !(node.is_error() || node.has_error()) {
@@ -160,7 +162,7 @@ pub fn diagnostics_syntax(node: Node, rope: &Rope) -> Vec<Diagnostic> {
                 if let Some(open) = node.child_by_field_name("open") {
                     if let Some(close) = node.child_by_field_name("close") {
                         if close.is_missing() {
-                            diagnostics.push(diag(
+                            diagnostics.push(error(
                                 open,
                                 format!("missing closing delimiter {}", close.kind()),
                             ));
@@ -172,7 +174,7 @@ pub fn diagnostics_syntax(node: Node, rope: &Rope) -> Vec<Diagnostic> {
                 if let Some(operator) = node.child_by_field_name("operator") {
                     if let Some(rhs) = node.child_by_field_name("rhs") {
                         if rhs.is_missing() {
-                            diagnostics.push(diag(
+                            diagnostics.push(error(
                                 operator,
                                 format!("missing rhs for operator {}", operator.kind()),
                             ));
@@ -183,7 +185,7 @@ pub fn diagnostics_syntax(node: Node, rope: &Rope) -> Vec<Diagnostic> {
             "function_definition" => {
                 if let Some(body) = node.child_by_field_name("body") {
                     if body.is_missing() {
-                        diagnostics.push(diag(node, format!("missing function body")));
+                        diagnostics.push(error(node, format!("missing function body")));
                     }
                 }
             }
@@ -196,7 +198,7 @@ pub fn diagnostics_syntax(node: Node, rope: &Rope) -> Vec<Diagnostic> {
             if node.is_error() {
                 let child = cursor.node();
                 match child.kind() {
-                    "(" | "{" | "[" | "[[" => diagnostics.push(diag(
+                    "(" | "{" | "[" | "[[" => diagnostics.push(error(
                         child,
                         format!("missing closing delimiter {}", child.kind()),
                     )),
@@ -219,12 +221,12 @@ pub fn diagnostics_syntax(node: Node, rope: &Rope) -> Vec<Diagnostic> {
             handled_error = true;
             let raw = rope.byte_slice(node.byte_range()).to_string();
             match raw.as_str() {
-                ")" | "}" | "]" | "]]" => diagnostics.push(diag(
+                ")" | "}" | "]" | "]]" => diagnostics.push(error(
                     node,
                     format!("Syntax Error: unexpected closing delimiter {}", raw),
                 )),
                 _ => {
-                    diagnostics.push(diag(node, format!("Syntax Error: unexpected {:?}", raw)));
+                    diagnostics.push(error(node, format!("Syntax Error: unexpected {:?}", raw)));
                 }
             }
         }
@@ -236,4 +238,150 @@ pub fn diagnostics_syntax(node: Node, rope: &Rope) -> Vec<Diagnostic> {
     let mut cursor = node.walk();
     traverse(&mut cursor, &mut diagnostics, rope);
     diagnostics
+}
+
+pub fn diagnostics_semantics(node: Node, rope: &Rope, config: Config) -> Vec<Diagnostic> {
+    fn diag(node: Node, message: String) -> Diagnostic {
+        Diagnostic {
+            message: message,
+            severity: Some(DiagnosticSeverity::WARNING),
+            range: node_range(node),
+            code: None,
+            code_description: None,
+            source: None,
+            related_information: None,
+            tags: None,
+            data: None,
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, Default)]
+    struct State {
+        check_traing_commas: bool,
+        check_case: bool,
+    }
+
+    impl State {
+        fn check_traing_commas(&mut self, check: bool) {
+            self.check_traing_commas = check;
+        }
+        fn check_case(&mut self, check: bool) {
+            self.check_case = check;
+        }
+    }
+
+    fn traverse(
+        cursor: &mut TreeCursor,
+        diagnostics: &mut Vec<Diagnostic>,
+        rope: &Rope,
+        config: Config,
+        mut state: State,
+    ) {
+        let node = cursor.node();
+
+        match node.kind() {
+            "arguments" => {
+                if state.check_traing_commas {
+                    state.check_traing_commas(false);
+                    if cursor.goto_last_child() {
+                        while cursor.goto_previous_sibling() && cursor.node().kind() == "comment" {}
+                        if cursor.node().kind() == "comma" {
+                            diagnostics
+                                .push(diag(cursor.node(), "trailing comma in arguments".into()));
+                        }
+                        cursor.goto_parent();
+                    }
+                }
+            }
+            "binary_operator" => {
+                if let Some(lhs) = node.child_by_field_name("lhs") {
+                    if lhs.kind() == "identifier" {
+                        let name = rope.byte_slice(lhs.byte_range()).to_string();
+                        if state.check_case {
+                            let correct_case = match config.case {
+                                Case::Camel => case::to_camel_case(&name),
+                                Case::Snake => case::to_snake_case(&name),
+                            };
+                            if name != correct_case {
+                                diagnostics.push(diag(
+                                    node,
+                                    format!(
+                                        "Variable '{}' should have {} name, e.g. {}",
+                                        name,
+                                        match config.case {
+                                            Case::Camel => "camelCase",
+                                            Case::Snake => "snake_case",
+                                        },
+                                        correct_case
+                                    ),
+                                ));
+                            }
+                        }
+                    }
+                }
+                if let Some(operator) = node.child_by_field_name("operator") {
+                    if operator.kind() == "=" {
+                        diagnostics.push(diag(node, format!("Use <-, not =, for assignment")));
+                    }
+                }
+            }
+            "call" => state.check_traing_commas(true),
+            "function_definition" => state.check_case(true),
+            _ => {}
+        }
+
+        if cursor.goto_first_child() {
+            loop {
+                traverse(cursor, diagnostics, rope, config, state);
+
+                if !cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+
+            cursor.goto_parent();
+        }
+    }
+
+    let mut diagnostics = Vec::new();
+    let mut cursor = node.walk();
+    traverse(
+        &mut cursor,
+        &mut diagnostics,
+        rope,
+        config,
+        State::default(),
+    );
+    diagnostics
+}
+
+fn error(node: Node, message: String) -> Diagnostic {
+    diag(node, message, DiagnosticSeverity::ERROR)
+}
+
+fn diag(node: Node, message: String, severity: DiagnosticSeverity) -> Diagnostic {
+    Diagnostic {
+        message: message,
+        severity: Some(severity),
+        range: node_range(node),
+        code: None,
+        code_description: None,
+        source: None,
+        related_information: None,
+        tags: None,
+        data: None,
+    }
+}
+
+fn node_range(node: Node) -> Range {
+    Range {
+        start: Position {
+            line: node.start_position().row as u32,
+            character: node.start_position().column as u32,
+        },
+        end: Position {
+            line: node.end_position().row as u32,
+            character: node.end_position().column as u32,
+        },
+    }
 }

@@ -1,6 +1,6 @@
 use {
     crate::{
-        cli, tree,
+        cli, config, tree,
         utils::{self},
     },
     console::style,
@@ -12,9 +12,22 @@ use {
     tree_sitter::Node,
 };
 
+#[derive(Debug, Clone, Copy)]
+pub struct Config {
+    pub spaces: usize,
+}
+
 pub fn run(maybe_files: Option<&[PathBuf]>, check: bool, diff: bool) -> Result<(), ()> {
     let root: Vec<PathBuf> = vec![".".into()];
     let files = maybe_files.unwrap_or(&root);
+
+    let config = match config::Config::from_path(&files.first().unwrap()) {
+        Ok(config) => config,
+        Err(err) => {
+            cli::error(&err.to_string());
+            return Err(());
+        }
+    };
 
     let mut n_files = 0;
     let mut n_unformatted = 0;
@@ -42,7 +55,9 @@ pub fn run(maybe_files: Option<&[PathBuf]>, check: bool, diff: bool) -> Result<(
         };
         let tree = tree::parse(&old, None);
         let rope = Rope::from_str(&old);
-        let new = match format(tree.root_node(), &rope) {
+        let new = match format(tree.root_node(), &rope, Config {
+            spaces: config.spaces,
+        }) {
             Ok(new) => new,
             Err(err) => {
                 n_errors += 1;
@@ -175,7 +190,7 @@ enum LineEnding {
     Crlf,
 }
 
-pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
+pub fn format(node: Node, rope: &Rope, config: Config) -> Result<String, FormatError> {
     let line_ending = rope
         .chars()
         .tuple_windows()
@@ -193,6 +208,7 @@ pub fn format(node: Node, rope: &Rope) -> Result<String, FormatError> {
         rope,
         line_ending,
         false,
+        config,
     )?))
 }
 
@@ -201,13 +217,13 @@ fn traverse(
     rope: &Rope,
     line_ending: LineEnding,
     make_multiline: bool,
+    config: Config,
 ) -> Result<String, FormatError> {
-    const INDENT_BY: usize = 2;
-
     let kind = node.kind();
-    let fmt = |node: Node| traverse(node, rope, line_ending, false);
-    let fmt_multiline =
-        |node: Node, make_multiline: bool| traverse(node, rope, line_ending, make_multiline);
+    let fmt = |node: Node| traverse(node, rope, line_ending, false, config);
+    let fmt_multiline = |node: Node, make_multiline: bool| {
+        traverse(node, rope, line_ending, make_multiline, config)
+    };
     let fmt_with_ident_prefix =
         |node: Node| utils::add_indent_prefix(&rope.byte_slice(node.byte_range()).to_string());
     let field = |field: &'static str| {
@@ -223,7 +239,7 @@ fn traverse(
     let wrap_with_braces = |node: Node| -> Result<String, FormatError> {
         Ok(format!(
             "{{{}}}",
-            utils::indent_by_with_newlines(INDENT_BY, fmt(node)?, line_ending)
+            utils::indent_by_with_newlines(config.spaces, fmt(node)?, line_ending)
         ))
     };
     let is_fmt_skip_comment = |node: &Node| {
@@ -413,7 +429,7 @@ fn traverse(
                 .filter(|node| node.kind() == "comment")
                 .map(fmt)
                 .collect::<Result<Vec<String>, FormatError>>()?
-                .join(&format!("{line_ending}{}", " ".repeat(INDENT_BY)));
+                .join(&format!("{line_ending}{}", " ".repeat(config.spaces)));
 
             let lhs = field("lhs")?;
             let operator = field("operator")?;
@@ -435,7 +451,7 @@ fn traverse(
                     " "
                 },
                 if is_multiline {
-                    utils::indent_by(INDENT_BY, fmt(rhs)?, line_ending)
+                    utils::indent_by(config.spaces, fmt(rhs)?, line_ending)
                 } else {
                     fmt(rhs)?
                 }
@@ -512,7 +528,7 @@ fn traverse(
             } else if is_multiline || make_multiline {
                 format!(
                     "{{{}}}",
-                    utils::indent_by_with_newlines(INDENT_BY, lines, line_ending)
+                    utils::indent_by_with_newlines(config.spaces, lines, line_ending)
                 )
             } else {
                 format!("{{ {} }}", lines)
@@ -536,7 +552,7 @@ fn traverse(
                             && argument.child(0).unwrap().kind() == "braced_expression"
                     })
                 {
-                    utils::indent_by_with_newlines(INDENT_BY, arguments_fmt, line_ending)
+                    utils::indent_by_with_newlines(config.spaces, arguments_fmt, line_ending)
                 } else {
                     arguments_fmt
                 }
@@ -581,7 +597,7 @@ fn traverse(
                 {
                     parameters_fmt
                 } else {
-                    utils::indent_by_with_newlines(INDENT_BY, parameters_fmt, line_ending)
+                    utils::indent_by_with_newlines(config.spaces, parameters_fmt, line_ending)
                 },
                 if is_multiline && body.kind() != "braced_expression" {
                     wrap_with_braces(body)?
@@ -602,7 +618,7 @@ fn traverse(
             format!(
                 "if ({}) {}{}{}",
                 if is_multiline_condition && condition.kind() != "braced_expression" {
-                    utils::indent_by_with_newlines(INDENT_BY, fmt(condition)?, line_ending)
+                    utils::indent_by_with_newlines(config.spaces, fmt(condition)?, line_ending)
                 } else {
                     fmt(condition)?
                 },
@@ -777,7 +793,7 @@ fn traverse(
                     if node.start_position().row == node.end_position().row {
                         lines.join("")
                     } else {
-                        utils::indent_by_with_newlines(INDENT_BY, lines.join(""), line_ending)
+                        utils::indent_by_with_newlines(config.spaces, lines.join(""), line_ending)
                     }
                 )
             }
@@ -876,7 +892,7 @@ fn traverse(
                 if arguments.start_position().row == arguments.end_position().row {
                     arguments_fmt
                 } else {
-                    utils::indent_by_with_newlines(INDENT_BY, arguments_fmt, line_ending)
+                    utils::indent_by_with_newlines(config.spaces, arguments_fmt, line_ending)
                 }
             )
         }
@@ -891,7 +907,7 @@ fn traverse(
                 if arguments.start_position().row == arguments.end_position().row {
                     arguments_fmt
                 } else {
-                    utils::indent_by_with_newlines(INDENT_BY, arguments_fmt, line_ending)
+                    utils::indent_by_with_newlines(config.spaces, arguments_fmt, line_ending)
                 }
             )
         }
@@ -909,7 +925,7 @@ fn traverse(
             format!(
                 "while ({}) {}",
                 if is_multiline_condition && condition.kind() != "braced_expression" {
-                    utils::indent_by_with_newlines(INDENT_BY, fmt(condition)?, line_ending)
+                    utils::indent_by_with_newlines(config.spaces, fmt(condition)?, line_ending)
                 } else {
                     fmt(condition)?
                 },
@@ -973,7 +989,9 @@ mod test {
         // DEBUG
         // dbg!(tree.root_node().to_sexp());
         // eprintln!("{}", utils::format_node(&tree.root_node()));
-        format(tree.root_node(), &Rope::from_str(text))
+        format(tree.root_node(), &Rope::from_str(text), Config {
+            spaces: 2,
+        })
     }
 
     #[test]
