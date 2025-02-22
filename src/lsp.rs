@@ -377,7 +377,10 @@ impl LanguageServer for Backend {
         Ok(Some(vec![TextEdit {
             range: Range::new(
                 Position::new(0, 0),
-                Position::new(rope.len_lines() as u32, 0),
+                Position::new(
+                    (rope.len_lines() - 1) as u32,
+                    (rope.len_chars() - rope.line_to_char(rope.len_lines() - 1)) as u32,
+                ),
             ),
             new_text: new,
         }]))
@@ -414,12 +417,4 @@ impl LanguageServer for Backend {
             None,
         )))
     }
-
-    // async fn goto_definition(
-    //     &self,
-    //     params: GotoDefinitionParams,
-    // ) -> Result<Option<GotoDefinitionResponse>> {
-    //     // dbg!(params);
-    //     Ok(None)
-    // }
 }
